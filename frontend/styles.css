@@ -228,6 +228,129 @@ body {
     color: var(--text-secondary);
 }
 
+/* Web Chunk Styles */
+.message.web {
+    border-left: 4px solid #f59e0b;
+    background-color: #fffbeb;
+}
+
+.message.web.trusted {
+    border-left-color: #10b981;
+    background-color: #ecfdf5;
+}
+
+.message.web.untrusted {
+    border-left-color: #ef4444;
+    background-color: #fef2f2;
+}
+
+.web-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.web-source {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trust-badge {
+    font-size: 0.625rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.trust-badge.trusted {
+    background-color: #10b981;
+    color: white;
+}
+
+.trust-badge.untrusted {
+    background-color: #ef4444;
+    color: white;
+}
+
+.trust-toggle {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.trust-toggle:hover {
+    background-color: var(--bg-color);
+    border-color: var(--primary-color);
+}
+
+/* Context Menu */
+.context-menu {
+    position: absolute;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    min-width: 150px;
+    padding: 0.25rem 0;
+}
+
+.context-menu-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background-color 0.15s ease;
+}
+
+.context-menu-item:hover {
+    background-color: var(--bg-color);
+}
+
+.context-menu-item:first-child {
+    border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.context-menu-item:last-child {
+    border-radius: 0 0 0.25rem 0.25rem;
+}
+
+/* Slash commands help */
+.slash-commands {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: var(--bg-color);
+    border-radius: 0.5rem;
+    text-align: left;
+}
+
+.slash-commands h3 {
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-color);
+}
+
+.slash-commands code {
+    background-color: var(--surface-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--primary-color);
+    font-family: monospace;
+}
+
 /* Modal Styles */
 .modal {
     position: fixed;

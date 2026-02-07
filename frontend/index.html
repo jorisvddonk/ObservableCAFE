@@ -22,6 +22,10 @@
                     <h2>Welcome to RXCAFE Chat</h2>
                     <p>A reactive chat application built with the RXCAFE architecture.</p>
                     <p>Click "New Session" to start chatting with your preferred LLM backend.</p>
+                    <div class="slash-commands">
+                        <h3>Available Commands:</h3>
+                        <code>/web &lt;URL&gt;</code> - Fetch web content (untrusted by default)
+                    </div>
                 </div>
             </div>
             
@@ -29,7 +33,7 @@
                 <div class="input-wrapper">
                     <textarea 
                         id="message-input" 
-                        placeholder="Type your message..."
+                        placeholder="Type your message or use /web URL..."
                         rows="1"
                         disabled
                     ></textarea>
@@ -44,7 +48,7 @@
         </main>
         
         <footer class="footer">
-            <span>Powered by RXCAFE • Supports KoboldCPP & Ollama</span>
+            <span>Powered by RXCAFE • Supports KoboldCPP & Ollama • Web content requires trust</span>
         </footer>
     </div>
     
@@ -79,6 +83,13 @@
                 <button id="cancel-btn" class="btn btn-secondary">Cancel</button>
             </div>
         </div>
+    </div>
+    
+    <!-- Context Menu for Chunks -->
+    <div id="context-menu" class="context-menu" style="display: none;">
+        <div class="context-menu-item" id="context-trust">Trust Chunk</div>
+        <div class="context-menu-item" id="context-untrust">Untrust Chunk</div>
+        <div class="context-menu-item" id="context-copy">Copy Content</div>
     </div>
     
     <script src="/app.js"></script>

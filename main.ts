@@ -6,7 +6,7 @@
  * - Chunks flow through reactive streams
  * - Evaluators transform chunks via map/flatMap operations
  * - Stream composition creates processing pipelines
- * - Multiple LLM backends (KoboldCPP, Ollama) via unified interface
+ * - Security filtering for untrusted web content
  */
 
 import { serve } from 'bun';
@@ -37,6 +37,7 @@ const KOBOLD_BASE_URL = process.env.KOBOLD_URL || 'http://localhost:5001';
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
 const PORT = parseInt(process.env.PORT || '3000');
+const RXCAFE_TRACE = process.env.RXCAFE_TRACE === '1';
 
 console.log(`RXCAFE Chat Server`);
 console.log(`Backend: ${BACKEND}`);
@@ -44,6 +45,7 @@ console.log(`KoboldCPP URL: ${KOBOLD_BASE_URL}`);
 console.log(`Ollama URL: ${OLLAMA_BASE_URL}`);
 console.log(`Ollama Model: ${OLLAMA_MODEL}`);
 console.log(`Port: ${PORT}`);
+console.log(`Tracing: ${RXCAFE_TRACE ? 'ENABLED' : 'disabled'}`);
 
 // =============================================================================
 // Unified LLM Evaluator Interface
@@ -56,7 +58,7 @@ interface LLMEvaluator {
 
 function createEvaluator(backend: LLMBackend, model?: string): LLMEvaluator {
   if (backend === 'ollama') {
-    const ollama = new OllamaEvaluator(OLLAMA_BASE_URL, model || OLLAMA_MODEL);
+    const ollama = new OllamaEvaluator(OLLAMA_BASE_URL, model);
     return {
       evaluateChunk: ollama.evaluateChunk.bind(ollama),
       abort: async () => {
@@ -86,6 +88,7 @@ interface Session {
   backend: LLMBackend;
   model?: string;
   abortController: AbortController | null;
+  trustedChunks: Set<string>; // Track which chunk IDs are trusted
 }
 
 const sessions = new Map<string, Session>();
@@ -106,7 +109,8 @@ function createSession(backend: LLMBackend = BACKEND, model?: string): Session {
     llmEvaluator,
     backend,
     model,
-    abortController: null
+    abortController: null,
+    trustedChunks: new Set()
   };
   
   // Archive all chunks to history
@@ -116,6 +120,99 @@ function createSession(backend: LLMBackend = BACKEND, model?: string): Session {
   
   sessions.set(id, session);
   return session;
+}
+
+// =============================================================================
+// Security and Trust Management
+// =============================================================================
+
+/**
+ * Mark a chunk as untrusted (web content, external sources)
+ */
+function markUntrusted(chunk: Chunk, source: string): Chunk {
+  return annotateChunk(chunk, 'security.trust-level', {
+    trusted: false,
+    source: source,
+    requiresReview: true
+  });
+}
+
+/**
+ * Mark a chunk as trusted
+ */
+function markTrusted(chunk: Chunk): Chunk {
+  return annotateChunk(chunk, 'security.trust-level', {
+    trusted: true,
+    source: chunk.annotations['security.trust-level']?.source || 'manual',
+    requiresReview: false
+  });
+}
+
+/**
+ * Check if a chunk is trusted
+ */
+function isTrusted(chunk: Chunk): boolean {
+  return chunk.annotations['security.trust-level']?.trusted === true;
+}
+
+/**
+ * Fetch web content and create an untrusted chunk
+ */
+async function fetchWebContent(url: string): Promise<Chunk> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'RXCAFE-Bot/1.0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const contentType = response.headers.get('content-type') || 'text/plain';
+    
+    if (contentType.includes('text/html')) {
+      // For HTML, we should extract text content
+      const html = await response.text();
+      // Simple HTML tag stripping (in production, use a proper HTML parser)
+      const text = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 10000); // Limit to 10k chars
+      
+      const chunk = createTextChunk(text, 'com.rxcafe.web-fetch', {
+        'web.source-url': url,
+        'web.content-type': contentType,
+        'web.fetch-time': Date.now()
+      });
+      
+      return markUntrusted(chunk, `web:${url}`);
+    } else {
+      // For other content types, store as text
+      const text = await response.text();
+      const chunk = createTextChunk(text.slice(0, 10000), 'com.rxcafe.web-fetch', {
+        'web.source-url': url,
+        'web.content-type': contentType,
+        'web.fetch-time': Date.now()
+      });
+      
+      return markUntrusted(chunk, `web:${url}`);
+    }
+  } catch (error) {
+    const errorChunk = createTextChunk(
+      `Failed to fetch ${url}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'com.rxcafe.web-fetch',
+      {
+        'web.source-url': url,
+        'web.error': true
+      }
+    );
+    return markUntrusted(errorChunk, `web:${url}`);
+  }
 }
 
 // =============================================================================
@@ -149,12 +246,70 @@ function createTypeFilter(allowedTypes: string[]): Evaluator {
 }
 
 /**
+ * Create an evaluator that filters out untrusted chunks for LLM context
+ * Only trusted chunks flow through to the LLM
+ */
+function createTrustFilter(): Evaluator {
+  return (chunk: Chunk) => {
+    // Check if chunk has trust-level annotation
+    const trustLevel = chunk.annotations['security.trust-level'];
+    
+    if (trustLevel && trustLevel.trusted === false) {
+      // Return null chunk with annotation indicating it was filtered
+      return createNullChunk('com.rxcafe.security-filter', {
+        'filter.rejected': true,
+        'filter.reason': 'Untrusted content - requires user review',
+        'filter.source-chunk-id': chunk.id
+      });
+    }
+    
+    return chunk;
+  };
+}
+
+/**
+ * Build conversation context from session history
+ * Only includes trusted chunks (user messages, assistant responses, trusted web content)
+ */
+function buildConversationContext(history: Chunk[]): string {
+  const contextParts: string[] = [];
+  
+  for (const chunk of history) {
+    // Skip non-text chunks
+    if (chunk.contentType !== 'text') continue;
+    
+    const role = chunk.annotations['chat.role'];
+    const trustLevel = chunk.annotations['security.trust-level'];
+    const isTrusted = !trustLevel || trustLevel.trusted === true;
+    
+    // Skip untrusted content
+    if (!isTrusted) continue;
+    
+    const content = chunk.content as string;
+    
+    if (role === 'user') {
+      contextParts.push(`User: ${content}`);
+    } else if (role === 'assistant') {
+      contextParts.push(`Assistant: ${content}`);
+    } else if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url']) {
+      // Web content that has been trusted
+      const url = chunk.annotations['web.source-url'] || 'unknown';
+      contextParts.push(`[Web content from ${url}]: ${content}`);
+    }
+  }
+  
+  return contextParts.join('\n\n');
+}
+
+/**
  * Create an evaluator that wraps the LLM evaluator
  * This demonstrates flatMap pattern - one input chunk generates multiple output chunks
+ * Now includes full conversation context from trusted chunks
  */
 function createLLMStreamEvaluator(
   llmEvaluator: LLMEvaluator,
   backend: LLMBackend,
+  sessionHistory: Chunk[],
   onToken: (token: string) => void,
   onFinish: () => void,
   abortSignal: AbortSignal
@@ -169,6 +324,50 @@ function createLLMStreamEvaluator(
       return chunk;
     }
     
+    // Build full conversation context including trusted web content
+    const context = buildConversationContext(sessionHistory);
+    const currentMessage = chunk.content as string;
+    
+    // Create prompt with full context
+    const prompt = context 
+      ? `${context}\n\nUser: ${currentMessage}\nAssistant:`
+      : `User: ${currentMessage}\nAssistant:`;
+    
+    // RXCAFE_TRACE: Log the context being sent to LLM
+    if (RXCAFE_TRACE) {
+      console.log('\n═══════════════════════════════════════════════════════════');
+      console.log('RXCAFE_TRACE: LLM Context');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log(`Chunk ID: ${chunk.id}`);
+      console.log(`Producer: ${chunk.producer}`);
+      console.log(`Context Length: ${context.length} chars`);
+      console.log(`Current Message Length: ${currentMessage.length} chars`);
+      console.log(`Total Prompt Length: ${prompt.length} chars`);
+      console.log('\n--- FULL CONTEXT SENT TO LLM ---');
+      console.log(prompt);
+      console.log('--- END CONTEXT ---\n');
+      
+      console.log('Trusted chunks in history:');
+      let trustedCount = 0;
+      for (const h of sessionHistory) {
+        const trust = h.annotations['security.trust-level'];
+        if (h.contentType === 'text' && (!trust || trust.trusted === true)) {
+          trustedCount++;
+          const role = h.annotations['chat.role'] || h.producer;
+          console.log(`  - ${role}: ${(h.content as string).substring(0, 50)}...`);
+        }
+      }
+      console.log(`Total trusted chunks: ${trustedCount}`);
+      console.log('═══════════════════════════════════════════════════════════\n');
+    }
+    
+    // Create a context chunk with the full prompt
+    const contextChunk = createTextChunk(prompt, chunk.producer, {
+      ...chunk.annotations,
+      'llm.context-length': context.length,
+      'llm.full-prompt': true
+    });
+    
     // Use flatMap semantics: one input chunk generates multiple output chunks
     const outputs: Chunk[] = [];
     
@@ -181,7 +380,7 @@ function createLLMStreamEvaluator(
     
     try {
       // Stream tokens from LLM - each token becomes its own chunk
-      for await (const tokenChunk of llmEvaluator.evaluateChunk(chunk)) {
+      for await (const tokenChunk of llmEvaluator.evaluateChunk(contextChunk)) {
         if (abortSignal.aborted) {
           break;
         }
@@ -209,47 +408,45 @@ function createLLMStreamEvaluator(
 /**
  * Build a complete chat processing pipeline using stream composition
  * 
- * Pipeline: Input -> [Filter] -> [Annotate] -> [flatMap LLM] -> Output
+ * Pipeline: Input -> [Filter] -> [Annotate] -> [Security Filter] -> [flatMap LLM] -> Output
  */
 function buildChatPipeline(
   inputStream: ChunkStream,
   llmEvaluator: LLMEvaluator,
   backend: LLMBackend,
+  sessionHistory: Chunk[],
   onToken: (token: string) => void,
   onFinish: () => void,
   abortSignal: AbortSignal
 ): ChunkStream {
   // Step 1: Filter to only allow text chunks
-  // stream.filter() operation
   const textOnlyStream = inputStream.pipe(createTypeFilter(['text']));
   
   // Step 2: Annotate user chunks
-  // stream.map() operation  
   const annotatedStream = textOnlyStream.pipe(createRoleAnnotator('user'));
   
-  // Step 3: Branch stream - user messages go to LLM
-  // This demonstrates parallel processing: user chunks flow through,
-  // and LLM responses are merged back into the stream
+  // Step 3: SECURITY FILTER - Only trusted chunks flow to LLM
+  // This implements the RXCAFE security pattern from section 4.3
+  const trustedStream = annotatedStream.pipe(createTrustFilter());
+  
+  // Step 4: Branch stream - trusted user messages go to LLM
   const llmStream = new ChunkStream();
   
-  // Set up the LLM evaluator on the annotated stream
-  // flatMap pattern: one user chunk -> many LLM token chunks
-  annotatedStream.pipe(
-    createLLMStreamEvaluator(llmEvaluator, backend, onToken, onFinish, abortSignal)
+  // Set up the LLM evaluator on the trusted stream with full history
+  trustedStream.pipe(
+    createLLMStreamEvaluator(llmEvaluator, backend, sessionHistory, onToken, onFinish, abortSignal)
   ).pipe((chunk: Chunk) => {
-    // Forward all LLM outputs to the LLM stream
     llmStream.emit(chunk);
     return chunk;
   });
   
-  // Step 4: Merge streams - combine user input with LLM responses
-  // mergeStreams operator
+  // Step 5: Merge streams - combine all input with LLM responses
+  // Note: We merge from annotatedStream (all chunks) not just trusted ones
+  // This way untrusted chunks still appear in UI but don't go to LLM
   const combinedStream = mergeStreams(annotatedStream, llmStream);
   
-  // Step 5: Final transformation - annotate assistant responses
-  // stream.map() with conditional logic
+  // Step 6: Final transformation - annotate assistant responses
   const outputStream = combinedStream.map((chunk: Chunk) => {
-    // If it's a text chunk from the LLM evaluator, mark it as assistant
     if (chunk.contentType === 'text' && 
         (chunk.producer === 'com.rxcafe.kobold-evaluator' || 
          chunk.producer === 'com.rxcafe.ollama-evaluator')) {
@@ -333,6 +530,93 @@ async function handleGetHistory(sessionId: string): Promise<Response> {
   });
 }
 
+async function handleFetchWeb(sessionId: string, url: string): Promise<Response> {
+  const session = sessions.get(sessionId);
+  
+  if (!session) {
+    return new Response(JSON.stringify({ error: 'Session not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const chunk = await fetchWebContent(url);
+    session.stream.emit(chunk);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      chunk: chunk,
+      message: 'Web content fetched and added as untrusted chunk'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch URL'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleToggleTrust(sessionId: string, chunkId: string, trusted: boolean): Promise<Response> {
+  const session = sessions.get(sessionId);
+  
+  if (!session) {
+    return new Response(JSON.stringify({ error: 'Session not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Find the chunk in history
+  const chunkIndex = session.history.findIndex(c => c.id === chunkId);
+  if (chunkIndex === -1) {
+    return new Response(JSON.stringify({ error: 'Chunk not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const chunk = session.history[chunkIndex];
+  
+  // Update trust status
+  if (trusted) {
+    session.trustedChunks.add(chunkId);
+    const trustedChunk = markTrusted(chunk);
+    session.history[chunkIndex] = trustedChunk;
+    
+    // Re-emit the chunk to the stream so downstream evaluators see the update
+    session.stream.emit(trustedChunk);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      chunkId,
+      trusted: true,
+      message: 'Chunk marked as trusted and added to LLM context'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } else {
+    session.trustedChunks.delete(chunkId);
+    const untrustedChunk = markUntrusted(chunk, chunk.annotations['security.trust-level']?.source || 'manual');
+    session.history[chunkIndex] = untrustedChunk;
+    session.stream.emit(untrustedChunk);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      chunkId,
+      trusted: false,
+      message: 'Chunk marked as untrusted'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 async function handleChatStream(
   sessionId: string, 
   message: string
@@ -356,10 +640,12 @@ async function handleChatStream(
       let fullResponse = '';
       
       // Create processing pipeline with callbacks for streaming
+      // Pass session.history so the LLM can see all trusted context including web content
       const outputStream = buildChatPipeline(
         session.stream,
         session.llmEvaluator,
         session.backend,
+        session.history,
         // onToken callback - called for each token
         (token: string) => {
           fullResponse += token;
@@ -536,6 +822,35 @@ const server = serve({
     if (pathname.match(/^\/api\/session\/[^/]+\/history$/) && request.method === 'GET') {
       const sessionId = pathname.split('/')[3];
       const response = await handleGetHistory(sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    // NEW: Web fetch endpoint
+    if (pathname.match(/^\/api\/session\/[^/]+\/web$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json();
+      const urlToFetch = body.url;
+      
+      if (!urlToFetch) {
+        return new Response(JSON.stringify({ error: 'URL required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      
+      const response = await handleFetchWeb(sessionId, urlToFetch);
+      return addCors(response, corsHeaders);
+    }
+    
+    // NEW: Trust toggle endpoint
+    if (pathname.match(/^\/api\/session\/[^/]+\/chunk\/[^/]+\/trust$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const sessionId = parts[3];
+      const chunkId = parts[5];
+      const body = await request.json();
+      const trusted = body.trusted === true;
+      
+      const response = await handleToggleTrust(sessionId, chunkId, trusted);
       return addCors(response, corsHeaders);
     }
     

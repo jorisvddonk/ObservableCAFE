@@ -285,10 +285,24 @@ export class KoboldEvaluator {
       return;
     }
 
-    const userMessage = chunk.content as string;
-    const prompt = this.systemPrompt 
-      ? `${this.systemPrompt}\n\nUser: ${userMessage}\nAssistant:`
-      : `User: ${userMessage}\nAssistant:`;
+    const content = chunk.content as string;
+    
+    // Check if this is already a full conversation context (has full-prompt annotation)
+    // If so, use it directly. Otherwise, wrap it as a single user message.
+    const isFullPrompt = chunk.annotations['llm.full-prompt'] === true;
+    
+    let prompt: string;
+    if (isFullPrompt) {
+      // Content is already formatted as full conversation context
+      prompt = this.systemPrompt 
+        ? `${this.systemPrompt}\n\n${content}`
+        : content;
+    } else {
+      // Single user message - wrap it
+      prompt = this.systemPrompt 
+        ? `${this.systemPrompt}\n\nUser: ${content}\nAssistant:`
+        : `User: ${content}\nAssistant:`;
+    }
 
     yield annotateChunk(
       createNullChunk('com.rxcafe.kobold-evaluator'),

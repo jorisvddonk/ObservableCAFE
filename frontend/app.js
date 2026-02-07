@@ -2,6 +2,7 @@
  * RXCAFE Chat Frontend
  * Simple chat interface for the RXCAFE API
  * Supports both KoboldCPP and Ollama backends
+ * Includes web fetch with trust system
  */
 
 class RXCafeChat {
@@ -12,6 +13,8 @@ class RXCafeChat {
         this.isGenerating = false;
         this.currentMessageEl = null;
         this.currentContent = '';
+        this.chunkElements = new Map(); // Map chunk IDs to DOM elements
+        this.contextMenuChunkId = null;
         
         this.init();
     }
@@ -20,6 +23,7 @@ class RXCafeChat {
         this.cacheElements();
         this.bindEvents();
         this.autoResize();
+        this.hideContextMenuOnClick();
     }
     
     cacheElements() {
@@ -37,6 +41,12 @@ class RXCafeChat {
         this.backendRadios = document.querySelectorAll('input[name="backend"]');
         this.ollamaModelSection = document.getElementById('ollama-model-section');
         this.ollamaModelSelect = document.getElementById('ollama-model');
+        
+        // Context menu
+        this.contextMenu = document.getElementById('context-menu');
+        this.contextTrust = document.getElementById('context-trust');
+        this.contextUntrust = document.getElementById('context-untrust');
+        this.contextCopy = document.getElementById('context-copy');
     }
     
     bindEvents() {
@@ -63,12 +73,92 @@ class RXCafeChat {
                 }
             });
         });
+        
+        // Context menu actions
+        this.contextTrust.addEventListener('click', () => this.toggleTrust(true));
+        this.contextUntrust.addEventListener('click', () => this.toggleTrust(false));
+        this.contextCopy.addEventListener('click', () => this.copyChunkContent());
+    }
+    
+    hideContextMenuOnClick() {
+        document.addEventListener('click', (e) => {
+            if (!this.contextMenu.contains(e.target)) {
+                this.hideContextMenu();
+            }
+        });
+    }
+    
+    showContextMenu(e, chunkId) {
+        e.preventDefault();
+        this.contextMenuChunkId = chunkId;
+        
+        // Get the chunk element to check trust status
+        const chunkEl = this.chunkElements.get(chunkId);
+        if (chunkEl) {
+            const isTrusted = chunkEl.classList.contains('trusted');
+            this.contextTrust.style.display = isTrusted ? 'none' : 'block';
+            this.contextUntrust.style.display = isTrusted ? 'block' : 'none';
+        }
+        
+        this.contextMenu.style.display = 'block';
+        this.contextMenu.style.left = `${e.pageX}px`;
+        this.contextMenu.style.top = `${e.pageY}px`;
+    }
+    
+    hideContextMenu() {
+        this.contextMenu.style.display = 'none';
+        this.contextMenuChunkId = null;
+    }
+    
+    async toggleTrust(trusted) {
+        if (!this.contextMenuChunkId || !this.sessionId) return;
+        
+        try {
+            const response = await fetch(`/api/session/${this.sessionId}/chunk/${this.contextMenuChunkId}/trust`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trusted })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
+                if (chunkEl) {
+                    chunkEl.classList.remove('trusted', 'untrusted');
+                    chunkEl.classList.add(trusted ? 'trusted' : 'untrusted');
+                    
+                    // Update trust badge
+                    const badge = chunkEl.querySelector('.trust-badge');
+                    if (badge) {
+                        badge.textContent = trusted ? 'Trusted' : 'Untrusted';
+                        badge.className = `trust-badge ${trusted ? 'trusted' : 'untrusted'}`;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to toggle trust:', error);
+            this.showError('Failed to update trust status');
+        }
+        
+        this.hideContextMenu();
+    }
+    
+    copyChunkContent() {
+        if (!this.contextMenuChunkId) return;
+        
+        const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
+        if (chunkEl) {
+            const content = chunkEl.querySelector('.message-content')?.textContent || '';
+            navigator.clipboard.writeText(content).then(() => {
+                this.hideContextMenu();
+            });
+        }
     }
     
     async loadOllamaModels(backend) {
         if (!backend) return;
         
-        // Show loading state
         this.ollamaModelSelect.innerHTML = '<option value="">Loading models...</option>';
         this.ollamaModelSelect.disabled = true;
         
@@ -102,7 +192,6 @@ class RXCafeChat {
     showBackendModal() {
         this.backendModal.style.display = 'flex';
         
-        // Check if Ollama is selected and load models
         const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value;
         if (selectedBackend === 'ollama') {
             this.loadOllamaModels('ollama');
@@ -137,7 +226,9 @@ class RXCafeChat {
                 this.messageInput.disabled = false;
                 this.sendBtn.disabled = false;
                 this.messagesEl.innerHTML = '';
+                this.chunkElements.clear();
                 this.addSystemMessage(`Session created with ${this.backend}${this.model ? ' (' + this.model + ')' : ''}`);
+                this.addSystemMessage('Use /web URL to fetch web content (untrusted by default)');
                 this.hideBackendModal();
             }
         } catch (error) {
@@ -155,7 +246,16 @@ class RXCafeChat {
         const message = this.messageInput.value.trim();
         if (!message || this.isGenerating) return;
         
-        // Add user message
+        // Check for slash commands
+        if (message.startsWith('/web ')) {
+            const url = message.slice(5).trim();
+            await this.handleWebCommand(url);
+            this.messageInput.value = '';
+            this.messageInput.style.height = 'auto';
+            return;
+        }
+        
+        // Regular message
         this.addMessage('user', message);
         this.messageInput.value = '';
         this.messageInput.style.height = 'auto';
@@ -225,6 +325,127 @@ class RXCafeChat {
         }
     }
     
+    async handleWebCommand(url) {
+        if (!url) {
+            this.showError('Please provide a URL: /web https://example.com');
+            return;
+        }
+        
+        // Show fetching indicator
+        const loadingEl = document.createElement('div');
+        loadingEl.className = 'message system fetching';
+        loadingEl.innerHTML = '<div class="message-content">Fetching web content...</div>';
+        this.messagesEl.appendChild(loadingEl);
+        this.scrollToBottom();
+        
+        try {
+            const response = await fetch(`/api/session/${this.sessionId}/web`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            
+            const data = await response.json();
+            
+            // Remove loading indicator
+            loadingEl.remove();
+            
+            if (data.success && data.chunk) {
+                this.addWebChunk(data.chunk);
+            } else {
+                this.showError(data.error || 'Failed to fetch web content');
+            }
+        } catch (error) {
+            loadingEl.remove();
+            console.error('Failed to fetch web content:', error);
+            this.showError('Failed to fetch web content. Is the server running?');
+        }
+    }
+    
+    addWebChunk(chunk) {
+        const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
+        const sourceUrl = chunk.annotations?.['web.source-url'] || 'Unknown source';
+        
+        const messageEl = document.createElement('div');
+        messageEl.className = `message web ${isTrusted ? 'trusted' : 'untrusted'}`;
+        messageEl.dataset.chunkId = chunk.id;
+        
+        const headerEl = document.createElement('div');
+        headerEl.className = 'web-header';
+        
+        const sourceEl = document.createElement('span');
+        sourceEl.className = 'web-source';
+        sourceEl.textContent = `Web: ${sourceUrl}`;
+        
+        const trustBadge = document.createElement('span');
+        trustBadge.className = `trust-badge ${isTrusted ? 'trusted' : 'untrusted'}`;
+        trustBadge.textContent = isTrusted ? 'Trusted' : 'Untrusted';
+        
+        const trustToggle = document.createElement('button');
+        trustToggle.className = 'trust-toggle';
+        trustToggle.textContent = isTrusted ? 'Untrust' : 'Trust';
+        trustToggle.onclick = () => this.toggleTrustFromButton(chunk.id, !isTrusted);
+        
+        headerEl.appendChild(sourceEl);
+        headerEl.appendChild(trustBadge);
+        headerEl.appendChild(trustToggle);
+        
+        const contentEl = document.createElement('div');
+        contentEl.className = 'message-content';
+        contentEl.textContent = chunk.content;
+        
+        messageEl.appendChild(headerEl);
+        messageEl.appendChild(contentEl);
+        
+        // Right-click context menu
+        messageEl.addEventListener('contextmenu', (e) => this.showContextMenu(e, chunk.id));
+        
+        this.messagesEl.appendChild(messageEl);
+        this.chunkElements.set(chunk.id, messageEl);
+        this.scrollToBottom();
+        
+        if (!isTrusted) {
+            this.addSystemMessage('Web content added but NOT trusted. Right-click and select "Trust Chunk" to include in LLM context, or click the Trust button.');
+        }
+    }
+    
+    async toggleTrustFromButton(chunkId, trusted) {
+        if (!this.sessionId) return;
+        
+        try {
+            const response = await fetch(`/api/session/${this.sessionId}/chunk/${chunkId}/trust`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trusted })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const chunkEl = this.chunkElements.get(chunkId);
+                if (chunkEl) {
+                    chunkEl.classList.remove('trusted', 'untrusted');
+                    chunkEl.classList.add(trusted ? 'trusted' : 'untrusted');
+                    
+                    const badge = chunkEl.querySelector('.trust-badge');
+                    if (badge) {
+                        badge.textContent = trusted ? 'Trusted' : 'Untrusted';
+                        badge.className = `trust-badge ${trusted ? 'trusted' : 'untrusted'}`;
+                    }
+                    
+                    const toggle = chunkEl.querySelector('.trust-toggle');
+                    if (toggle) {
+                        toggle.textContent = trusted ? 'Untrust' : 'Trust';
+                        toggle.onclick = () => this.toggleTrustFromButton(chunkId, !trusted);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to toggle trust:', error);
+            this.showError('Failed to update trust status');
+        }
+    }
+    
     handleStreamData(data) {
         switch (data.type) {
             case 'token':
@@ -237,10 +458,8 @@ class RXCafeChat {
                 this.showErrorInMessage(this.currentMessageEl, data.error);
                 break;
             case 'finish':
-                // Generation finished
                 break;
             case 'done':
-                // Stream complete
                 break;
         }
     }
