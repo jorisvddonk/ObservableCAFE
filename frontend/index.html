@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RXCAFE Chat</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <h1>RXCAFE Chat</h1>
+            <div class="header-info">
+                <span id="session-id">No session</span>
+                <button id="new-session-btn" class="btn btn-secondary">New Session</button>
+            </div>
+        </header>
+        
+        <main class="chat-container">
+            <div id="messages" class="messages">
+                <div class="welcome-message">
+                    <h2>Welcome to RXCAFE Chat</h2>
+                    <p>A reactive chat application built with the RXCAFE architecture.</p>
+                    <p>Click "New Session" to start chatting.</p>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="message-input" 
+                        placeholder="Type your message..."
+                        rows="1"
+                        disabled
+                    ></textarea>
+                    <button id="send-btn" class="btn btn-primary" disabled>
+                        Send
+                    </button>
+                    <button id="abort-btn" class="btn btn-danger" style="display: none;">
+                        Stop
+                    </button>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="footer">
+            <span>Powered by RXCAFE & KoboldCPP</span>
+        </footer>
+    </div>
+    
+    <script src="/app.js"></script>
+</body>
+</html>
