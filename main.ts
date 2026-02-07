@@ -23,6 +23,7 @@ import {
 import { ChunkStream, mergeStreams } from './lib/stream.js';
 import { KoboldEvaluator } from './lib/kobold-api.js';
 import { OllamaEvaluator } from './lib/ollama-api.js';
+import { TelegramBot, TelegramUser, TelegramConfig } from './lib/telegram.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,9 +36,11 @@ type LLMBackend = 'kobold' | 'ollama';
 const BACKEND: LLMBackend = (process.env.LLM_BACKEND as LLMBackend) || 'kobold';
 const KOBOLD_BASE_URL = process.env.KOBOLD_URL || 'http://localhost:5001';
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma3:1b';
 const PORT = parseInt(process.env.PORT || '3000');
 const RXCAFE_TRACE = process.env.RXCAFE_TRACE === '1';
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 
 console.log(`RXCAFE Chat Server`);
 console.log(`Backend: ${BACKEND}`);
@@ -46,6 +49,7 @@ console.log(`Ollama URL: ${OLLAMA_BASE_URL}`);
 console.log(`Ollama Model: ${OLLAMA_MODEL}`);
 console.log(`Port: ${PORT}`);
 console.log(`Tracing: ${RXCAFE_TRACE ? 'ENABLED' : 'disabled'}`);
+console.log(`Telegram: ${TELEGRAM_TOKEN ? 'ENABLED' : 'disabled'}`);
 
 // =============================================================================
 // Unified LLM Evaluator Interface
@@ -127,6 +131,228 @@ function createSession(backend: LLMBackend = BACKEND, model?: string): Session {
   
   sessions.set(id, session);
   return session;
+}
+
+// =============================================================================
+// Telegram Bot Integration
+// =============================================================================
+
+// Map Telegram chat IDs to RXCAFE session IDs
+const telegramSessions = new Map<number, string>();
+// Map chunk IDs to Telegram messages (for trust buttons)
+const telegramChunkMessages = new Map<string, { chatId: number; messageId: number }>();
+
+let telegramBot: TelegramBot | null = null;
+
+async function initTelegramBot(): Promise<void> {
+  if (!TELEGRAM_TOKEN) {
+    console.log('Telegram bot not configured. Set TELEGRAM_TOKEN to enable.');
+    return;
+  }
+
+  const config: TelegramConfig = {
+    token: TELEGRAM_TOKEN,
+    webhookUrl: TELEGRAM_WEBHOOK_URL,
+    polling: !TELEGRAM_WEBHOOK_URL
+  };
+
+  telegramBot = new TelegramBot(config);
+  
+  try {
+    await telegramBot.init();
+    
+    // Handle incoming messages
+    telegramBot.onMessage(async (chatId, text, user) => {
+      console.log(`Telegram message from ${user.first_name} (${chatId}): ${text.substring(0, 50)}...`);
+      
+      // Get or create session for this chat
+      let sessionId = telegramSessions.get(chatId);
+      if (!sessionId) {
+        console.log(`[Telegram] Creating new session for chat ${chatId} with backend ${BACKEND}, model ${OLLAMA_MODEL}`);
+        const session = createSession(BACKEND, OLLAMA_MODEL);
+        telegramSessions.set(chatId, session.id);
+        sessionId = session.id;
+        console.log(`[Telegram] Created session ${sessionId}`);
+        await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Started*\n\nSession created with ${BACKEND} backend (${session.model || 'default model'}).\n\nAvailable commands:\n/web <URL> - Fetch web content\n/help - Show help`, { parseMode: 'Markdown' });
+      }
+      
+      const session = sessions.get(sessionId);
+      if (!session) {
+        await telegramBot!.sendMessage(chatId, '❌ Session error. Please restart with /start');
+        return;
+      }
+      
+      // Handle commands
+      if (text.startsWith('/start')) {
+        await telegramBot!.sendMessage(chatId, `👋 Welcome to RXCAFE Chat!\n\nI'm connected to the ${BACKEND} LLM backend.\n\nJust send me a message and I'll respond!`, { parseMode: 'Markdown' });
+        return;
+      }
+      
+      if (text.startsWith('/help')) {
+        await telegramBot!.sendMessage(chatId, `*Available Commands:*\n\n/web <URL> - Fetch web content (untrusted by default)\n/help - Show this help\n\n*Web Content Trust System:*\nWhen you fetch web content, it's marked as untrusted and won't be used by the LLM until you click the Trust button.`, { parseMode: 'Markdown' });
+        return;
+      }
+      
+      if (text.startsWith('/web ')) {
+        const url = text.slice(5).trim();
+        await handleTelegramWebCommand(chatId, session, url);
+        return;
+      }
+      
+      // Regular message - process through LLM
+      await handleTelegramMessage(chatId, session, text);
+    });
+    
+    // Handle callback queries (trust buttons)
+    telegramBot.onCallback(async (chatId, data, user) => {
+      if (data.startsWith('trust:')) {
+        const parts = data.split(':');
+        const chunkId = parts[1];
+        const trusted = parts[2] === 'true';
+        
+        const sessionId = telegramSessions.get(chatId);
+        if (!sessionId) return;
+        
+        await handleToggleTrust(sessionId, chunkId, trusted);
+        
+        // Send confirmation
+        await telegramBot!.sendMessage(chatId, trusted ? '✅ Chunk trusted and added to LLM context' : '❌ Chunk untrusted');
+      }
+    });
+    
+  } catch (error) {
+    console.error('Failed to initialize Telegram bot:', error);
+    telegramBot = null;
+  }
+}
+
+async function handleTelegramWebCommand(chatId: number, session: Session, url: string): Promise<void> {
+  if (!telegramBot) return;
+  
+  await telegramBot.sendMessage(chatId, `🌐 Fetching ${url}...`);
+  
+  try {
+    const chunk = await fetchWebContent(url);
+    session.stream.emit(chunk);
+    
+    // Store chunk info for trust buttons
+    const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
+    const messageText = `🌐 *Web Content Fetched*\n\nSource: ${url}\nStatus: ${isTrusted ? '✅ Trusted' : '⚠️ Untrusted'}\n\n${(chunk.content as string).substring(0, 500)}${(chunk.content as string).length > 500 ? '...' : ''}`;
+    
+    if (!isTrusted) {
+      // Send with trust buttons
+      await telegramBot.sendMessage(chatId, messageText, {
+        parseMode: 'Markdown',
+        replyMarkup: telegramBot.createTrustKeyboard(chunk.id)
+      });
+    } else {
+      await telegramBot.sendMessage(chatId, messageText, { parseMode: 'Markdown' });
+    }
+    
+  } catch (error) {
+    await telegramBot.sendMessage(chatId, `❌ Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function handleTelegramMessage(chatId: number, session: Session, message: string): Promise<void> {
+  if (!telegramBot) return;
+  
+  console.log(`[Telegram] Processing message: "${message.substring(0, 50)}..."`);
+  
+  // Create user chunk
+  const userChunk = createTextChunk(message, 'com.rxcafe.user', {
+    'chat.role': 'user'
+  });
+  session.stream.emit(userChunk);
+  
+  // Send "typing" indicator
+  let statusMessage: any;
+  try {
+    statusMessage = await telegramBot.sendMessage(chatId, '🤔 Thinking...');
+    console.log(`[Telegram] Sent status message, ID: ${statusMessage.message_id}`);
+  } catch (error) {
+    console.error('[Telegram] Failed to send status message:', error);
+  }
+  
+  // Build context and get LLM response
+  const context = buildConversationContext(session.history, userChunk.id);
+  const prompt = context ? `${context}\n\nUser: ${message}\nAssistant:` : `User: ${message}\nAssistant:`;
+  
+  console.log(`[Telegram] Built prompt, length: ${prompt.length} chars`);
+  
+  const contextChunk = createTextChunk(prompt, 'com.rxcafe.user', {
+    'chat.role': 'user',
+    'llm.full-prompt': true
+  });
+  
+  let fullResponse = '';
+  let messageId: number | null = null;
+  let tokenCount = 0;
+  
+  try {
+    console.log(`[Telegram] Starting LLM evaluation...`);
+    
+    // Stream response
+    for await (const tokenChunk of session.llmEvaluator.evaluateChunk(contextChunk)) {
+      if (tokenChunk.contentType === 'text') {
+        tokenCount++;
+        fullResponse += tokenChunk.content;
+        
+        // Update message every 20 characters to avoid rate limits
+        if (fullResponse.length % 20 === 0 && fullResponse.length > 0) {
+          if (!messageId) {
+            // First update - need to send new message
+            console.log(`[Telegram] Sending first response update...`);
+            try {
+              const msg = await telegramBot.sendMessage(chatId, fullResponse + ' ▌');
+              messageId = msg.message_id;
+              console.log(`[Telegram] Sent message, ID: ${messageId}`);
+            } catch (sendError) {
+              console.error('[Telegram] Failed to send message:', sendError);
+            }
+          } else {
+            try {
+              await telegramBot.editMessage(chatId, messageId, fullResponse + ' ▌');
+            } catch (editError) {
+              console.error('[Telegram] Failed to edit message:', editError);
+            }
+          }
+        }
+      }
+    }
+    
+    console.log(`[Telegram] LLM evaluation complete. Tokens: ${tokenCount}, Response length: ${fullResponse.length}`);
+    
+    // Final message
+    if (!messageId) {
+      console.log(`[Telegram] Sending final response (no updates made)`);
+      try {
+        await telegramBot.sendMessage(chatId, fullResponse || 'No response');
+      } catch (sendError) {
+        console.error('[Telegram] Failed to send final message:', sendError);
+      }
+    } else {
+      try {
+        await telegramBot.editMessage(chatId, messageId, fullResponse);
+      } catch (editError) {
+        console.error('[Telegram] Failed to edit final message:', editError);
+      }
+    }
+    
+    // Save assistant response to session
+    const assistantChunk = createTextChunk(fullResponse, 'com.rxcafe.assistant', {
+      'chat.role': 'assistant'
+    });
+    session.stream.emit(assistantChunk);
+    
+  } catch (error) {
+    console.error('[Telegram] LLM error:', error);
+    try {
+      await telegramBot.sendMessage(chatId, `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (sendError) {
+      console.error('[Telegram] Failed to send error message:', sendError);
+    }
+  }
 }
 
 // =============================================================================
@@ -818,6 +1044,21 @@ const server = serve({
       });
     }
     
+    // Telegram webhook endpoint
+    if (pathname === '/webhook/telegram' && request.method === 'POST') {
+      if (!telegramBot) {
+        return new Response(JSON.stringify({ error: 'Telegram bot not configured' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const update = await request.json();
+      await telegramBot.handleUpdate(update);
+      
+      return new Response('OK', { status: 200 });
+    }
+    
     // API Routes
     if (pathname === '/api/session' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -917,3 +1158,6 @@ function addCors(response: Response, corsHeaders: Record<string, string>): Respo
 }
 
 console.log(`Server running at http://localhost:${PORT}`);
+
+// Initialize Telegram bot (if configured)
+initTelegramBot().catch(console.error);

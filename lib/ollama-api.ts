@@ -76,6 +76,8 @@ export class OllamaAPI {
   }
 
   async *generateStream(prompt: string, abortSignal?: AbortSignal): AsyncIterable<{ token?: string; done?: boolean; finishReason?: string }> {
+    console.log(`[OllamaAPI] Generating with model: ${this.settings.model}, prompt length: ${prompt.length}`);
+    
     const response = await fetch(`${this.settings.baseUrl}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,6 +99,12 @@ export class OllamaAPI {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[OllamaAPI] HTTP error ${response.status}: ${errorText}`);
+      throw new Error(`Ollama error: ${response.status} - ${errorText}`);
+    }
+
+    if (!response.ok) {
       throw new Error(`Ollama error: ${response.status}`);
     }
 
@@ -106,6 +114,7 @@ export class OllamaAPI {
     }
 
     const decoder = new TextDecoder();
+    let tokenCount = 0;
 
     try {
       while (true) {
@@ -120,10 +129,15 @@ export class OllamaAPI {
             const data = JSON.parse(line);
             
             if (data.response) {
+              tokenCount++;
+              if (tokenCount === 1) {
+                console.log(`[OllamaAPI] Received first token`);
+              }
               yield { token: data.response };
             }
             
             if (data.done) {
+              console.log(`[OllamaAPI] Generation complete, total tokens: ${tokenCount}`);
               yield { done: true, finishReason: 'stop' };
               return;
             }
@@ -133,6 +147,7 @@ export class OllamaAPI {
           }
         }
       }
+      console.log(`[OllamaAPI] Stream ended, total tokens: ${tokenCount}`);
     } finally {
       reader.releaseLock();
     }
@@ -185,7 +200,10 @@ export class OllamaEvaluator {
   }
 
   async *evaluateChunk(chunk: Chunk): AsyncGenerator<Chunk> {
+    console.log(`[OllamaEvaluator] Evaluating chunk, contentType: ${chunk.contentType}, length: ${(chunk.content as string)?.length || 0}`);
+    
     if (chunk.contentType !== 'text') {
+      console.log(`[OllamaEvaluator] Skipping non-text chunk`);
       yield annotateChunk(
         createNullChunk('com.rxcafe.ollama-evaluator'),
         'error.message',
@@ -195,6 +213,7 @@ export class OllamaEvaluator {
     }
 
     const userMessage = chunk.content as string;
+    console.log(`[OllamaEvaluator] Sending prompt (${userMessage.length} chars) to model ${this.api.getModel()}`);
 
     yield annotateChunk(
       createNullChunk('com.rxcafe.ollama-evaluator'),
@@ -203,14 +222,20 @@ export class OllamaEvaluator {
     );
 
     try {
+      let tokenCount = 0;
       for await (const { token, done, finishReason } of this.api.generateStream(userMessage)) {
         if (token) {
+          tokenCount++;
+          if (tokenCount === 1) {
+            console.log(`[OllamaEvaluator] Received first token`);
+          }
           yield createTextChunk(token, 'com.rxcafe.ollama-evaluator', {
             'llm.stream': true,
             'llm.parent-chunk-id': chunk.id
           });
         }
         if (done && finishReason) {
+          console.log(`[OllamaEvaluator] Generation complete, ${tokenCount} tokens`);
           yield annotateChunk(
             createNullChunk('com.rxcafe.ollama-evaluator'),
             'llm.finish-reason',
@@ -218,7 +243,9 @@ export class OllamaEvaluator {
           );
         }
       }
+      console.log(`[OllamaEvaluator] Stream ended, ${tokenCount} total tokens`);
     } catch (error) {
+      console.error(`[OllamaEvaluator] Error:`, error);
       yield annotateChunk(
         createNullChunk('com.rxcafe.ollama-evaluator'),
         'error.message',

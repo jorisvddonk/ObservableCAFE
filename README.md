@@ -6,6 +6,7 @@ A reactive chat application built with the RXCAFE architecture pattern, using Bu
 
 - **RXCAFE Architecture**: Chunks, annotations, and evaluators following the RXCAFE spec
 - **Multiple LLM Backends**: KoboldCPP and Ollama support
+- **Telegram Bot**: Use Telegram as input/output alongside the web interface
 - **Streaming LLM responses**: Real-time token streaming
 - **Session management**: Multiple concurrent chat sessions with backend selection
 - **Web Content Fetching**: `/web URL` command with trust-based security
@@ -41,20 +42,34 @@ This app implements the RXCAFE pattern:
    ```bash
    export LLM_BACKEND=ollama
    export OLLAMA_URL=http://localhost:11434
-   export OLLAMA_MODEL=llama2  # or any model you have pulled
+   export OLLAMA_MODEL=gemma3:1b  # or any model you have pulled
    ```
 
-3. **Run the server**:
+3. **(Optional) Configure Telegram Bot**:
+   ```bash
+   export TELEGRAM_TOKEN=your_bot_token_here
+   # Optional: for webhook mode instead of polling
+   # export TELEGRAM_WEBHOOK_URL=https://yourdomain.com/webhook/telegram
+   ```
+   
+   To create a bot:
+   1. Message [@BotFather](https://t.me/botfather) on Telegram
+   2. Send `/newbot` and follow instructions
+   3. Copy the token and set it as `TELEGRAM_TOKEN`
+
+4. **Run the server**:
    ```bash
    bun run main.ts
    # or
    bun start
    ```
 
-4. **Open the app**:
+5. **Open the app**:
    Navigate to `http://localhost:3000`
 
    When creating a session, you can choose between KoboldCPP and Ollama backends in the UI.
+   
+   Or start chatting via Telegram by messaging your bot!
 
 ## Slash Commands
 
@@ -89,7 +104,8 @@ The chunk will turn green when trusted and be included in future LLM context.
 │   ├── chunk.ts           # RXCAFE chunk primitives
 │   ├── stream.ts          # Reactive stream utilities
 │   ├── kobold-api.ts      # KoboldCPP API client & evaluator
-│   └── ollama-api.ts      # Ollama API client & evaluator
+│   ├── ollama-api.ts      # Ollama API client & evaluator
+│   └── telegram.ts        # Telegram Bot API client
 ├── frontend/
 │   ├── index.html         # Chat UI with trust controls
 │   ├── app.js             # Frontend logic with slash commands
@@ -102,9 +118,11 @@ The chunk will turn green when trusted and be included in future LLM context.
 - `LLM_BACKEND` - Default LLM backend: `kobold` or `ollama` (default: `kobold`)
 - `KOBOLD_URL` - KoboldCPP server URL (default: `http://localhost:5001`)
 - `OLLAMA_URL` - Ollama server URL (default: `http://localhost:11434`)
-- `OLLAMA_MODEL` - Default Ollama model (default: `llama2`)
+- `OLLAMA_MODEL` - Default Ollama model (default: `gemma3:1b`)
 - `PORT` - HTTP server port (default: `3000`)
 - `RXCAFE_TRACE` - Set to `1` to enable detailed logging of LLM context (default: disabled)
+- `TELEGRAM_TOKEN` - Telegram bot token (optional, enables Telegram bot)
+- `TELEGRAM_WEBHOOK_URL` - Webhook URL for Telegram (optional, uses polling if not set)
 
 ### Tracing
 
@@ -148,6 +166,33 @@ This prevents:
 1. Download KoboldCPP: https://github.com/LostRuins/koboldcpp
 2. Start KoboldCPP with your GGUF model
 3. Run this app (KoboldCPP is the default)
+
+## Using Telegram Bot
+
+Once configured with `TELEGRAM_TOKEN`, the bot will:
+
+1. **Auto-create sessions**: Each Telegram chat gets its own RXCAFE session
+2. **Support all commands**:
+   - `/web <URL>` - Fetch web content (with trust buttons)
+   - `/help` - Show help
+   - Any other message - Chat with the LLM
+3. **Streaming responses**: Bot shows typing indicator and streams response
+4. **Trust system**: Web content shows inline buttons to trust/untrust
+
+**Commands in Telegram:**
+- `/start` - Initialize bot and show welcome message
+- `/web https://example.com` - Fetch web content
+- `/help` - Show available commands
+
+**Trusting Web Content in Telegram:**
+When you fetch web content, the bot sends it with Trust/Untrust buttons:
+- ✅ Click "Trust" to add to LLM context
+- ❌ Click "Untrust" to keep it excluded
+
+**Notes:**
+- Each Telegram chat is isolated (separate session)
+- Telegram sessions persist while the server is running
+- Web content fetched via Telegram follows the same security rules as the web UI
 
 ## License
 

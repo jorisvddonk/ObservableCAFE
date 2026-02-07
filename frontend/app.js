@@ -172,12 +172,12 @@ class RXCafeChat {
                     .join('');
                 this.ollamaModelSelect.disabled = false;
             } else {
-                this.ollamaModelSelect.innerHTML = '<option value="llama2">llama2</option>';
+                this.ollamaModelSelect.innerHTML = '<option value="gemma3:1b">gemma3:1b</option>';
                 this.ollamaModelSelect.disabled = false;
             }
         } catch (error) {
             console.error('Failed to load models:', error);
-            this.ollamaModelSelect.innerHTML = '<option value="llama2">llama2 (default)</option>';
+            this.ollamaModelSelect.innerHTML = '<option value="gemma3:1b">gemma3:1b (default)</option>';
             this.ollamaModelSelect.disabled = false;
         }
     }
