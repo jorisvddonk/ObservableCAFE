@@ -68,6 +68,12 @@ export class TelegramBot {
   private lastUpdateId: number = 0;
   private messageHandlers: TelegramMessageHandler[] = [];
   private callbackHandlers: TelegramCallbackHandler[] = [];
+  private pendingEdits: Map<string, { text: string; timer?: NodeJS.Timeout }> = new Map();
+  private editQueue: Array<{ chatId: number; messageId: number; text: string }> = [];
+  private processingQueue = false;
+  private lastEditTime = 0;
+  private static readonly MIN_EDIT_INTERVAL_MS = 300;
+  private static readonly DEBOUNCE_MS = 100;
 
   constructor(config: TelegramConfig) {
     this.token = config.token;
@@ -125,8 +131,6 @@ export class TelegramBot {
       throw new Error(`Failed to delete webhook: ${data.description}`);
     }
   }
-
-  private pollingActive = false;
 
   startPolling(): void {
     if (this.pollingActive) {
@@ -302,28 +306,58 @@ export class TelegramBot {
 
     const messageId = data.result.message_id;
     let fullText = '';
-    let lastUpdate = '';
-    let updateCount = 0;
 
     for await (const token of textStream) {
       fullText += token;
-      updateCount++;
-
-      // Update every 5 tokens or at the end to avoid rate limits
-      if (updateCount % 5 === 0 || token.includes('\n')) {
-        // Only update if text changed significantly
-        if (fullText !== lastUpdate && fullText.length > lastUpdate.length + 10) {
-          await this.editMessage(chatId, messageId, fullText + ' ▌');
-          lastUpdate = fullText;
-        }
-      }
+      this.editMessage(chatId, messageId, fullText + ' ▌');
     }
 
-    // Final update without cursor
     await this.editMessage(chatId, messageId, fullText);
   }
 
   async editMessage(chatId: number, messageId: number, text: string): Promise<void> {
+    const key = `${chatId}:${messageId}`;
+    const existing = this.pendingEdits.get(key);
+    
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+    
+    this.pendingEdits.set(key, { text });
+    
+    this.pendingEdits.get(key)!.timer = setTimeout(() => {
+      const pending = this.pendingEdits.get(key);
+      if (pending) {
+        this.pendingEdits.delete(key);
+        this.editQueue.push({ chatId, messageId, text: pending.text });
+        this.processEditQueue();
+      }
+    }, TelegramBot.DEBOUNCE_MS);
+  }
+
+  private async processEditQueue(): Promise<void> {
+    if (this.processingQueue) return;
+    this.processingQueue = true;
+    
+    while (this.editQueue.length > 0) {
+      const now = Date.now();
+      const elapsed = now - this.lastEditTime;
+      
+      if (elapsed < TelegramBot.MIN_EDIT_INTERVAL_MS) {
+        await new Promise(r => setTimeout(r, TelegramBot.MIN_EDIT_INTERVAL_MS - elapsed));
+      }
+      
+      const item = this.editQueue.shift();
+      if (!item) break;
+      
+      this.lastEditTime = Date.now();
+      await this.doEditMessage(item.chatId, item.messageId, item.text);
+    }
+    
+    this.processingQueue = false;
+  }
+
+  private async doEditMessage(chatId: number, messageId: number, text: string): Promise<void> {
     const maxLength = 4096;
     let messageText = text;
 
@@ -343,7 +377,6 @@ export class TelegramBot {
 
     const data = await response.json();
     if (!data.ok && data.error_code !== 400) {
-      // 400 usually means message not modified, which is fine
       console.error('Failed to edit message:', data.description);
     }
   }
