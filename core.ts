@@ -281,6 +281,9 @@ export function toggleChunkTrust(
  */
 export function createRoleAnnotator(role: string): Evaluator {
   return (chunk: Chunk) => {
+    if (chunk.annotations['chat.role']) {
+      return chunk;
+    }
     return annotateChunk(chunk, 'chat.role', role);
   };
 }
@@ -307,11 +310,17 @@ export function createTypeFilter(allowedTypes: string[]): Evaluator {
  */
 export function createTrustFilter(): Evaluator {
   return (chunk: Chunk) => {
-    // Check if chunk has trust-level annotation
+    if (chunk.annotations['chat.role'] === 'assistant') {
+      return createNullChunk('com.rxcafe.security-filter', {
+        'filter.rejected': true,
+        'filter.reason': 'Assistant response - not triggering LLM',
+        'filter.source-chunk-id': chunk.id
+      });
+    }
+    
     const trustLevel = chunk.annotations['security.trust-level'];
     
     if (trustLevel && trustLevel.trusted === false) {
-      // Return null chunk with annotation indicating it was filtered
       return createNullChunk('com.rxcafe.security-filter', {
         'filter.rejected': true,
         'filter.reason': 'Untrusted content - requires user review',
