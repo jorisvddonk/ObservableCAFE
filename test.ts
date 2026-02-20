@@ -2,7 +2,9 @@
  * RXCAFE Test - Automated playback testing for the pipeline
  * 
  * Usage:
- *   bun test                        # Run all tests with default backend
+ *   bun test                        # Run built-in tests with default backend
+ *   bun test tests.json             # Run tests from JSON file
+ *   cat tests.json | bun test -     # Run tests from stdin
  *   bun test -- --backend ollama    # Run with specific backend
  *   bun test -- --verbose           # Show detailed output
  */
@@ -11,12 +13,12 @@ import {
   getDefaultConfig, 
   createSession, 
   addChunkToSession,
-  markTrusted,
   type Session,
   type CoreConfig,
   type Chunk
 } from './core.js';
 import { Subject } from './lib/stream.js';
+import { readFileSync } from 'fs';
 
 const args = process.argv.slice(2);
 
@@ -25,6 +27,7 @@ interface TestOptions {
   model?: string;
   verbose?: boolean;
   timeout?: number;
+  testFile?: string;
 }
 
 interface TestCase {
@@ -43,6 +46,14 @@ interface TestCase {
   };
 }
 
+interface TestFile {
+  name?: string;
+  backend?: string;
+  model?: string;
+  timeout?: number;
+  tests: TestCase[];
+}
+
 interface TestResult {
   name: string;
   passed: boolean;
@@ -51,25 +62,30 @@ interface TestResult {
   error?: string;
 }
 
-function parseArgs(): TestOptions {
-  const result: TestOptions = { backend: 'ollama', timeout: 30000 };
+function parseArgs(): { options: TestOptions; testFile?: string } {
+  const options: TestOptions = { backend: 'ollama', timeout: 30000 };
+  let testFile: string | undefined;
   
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--backend' && args[i + 1]) {
-      result.backend = args[i + 1];
+      options.backend = args[i + 1];
       i++;
     } else if (args[i] === '--model' && args[i + 1]) {
-      result.model = args[i + 1];
+      options.model = args[i + 1];
       i++;
     } else if (args[i] === '--verbose' || args[i] === '-v') {
-      result.verbose = true;
+      options.verbose = true;
     } else if (args[i] === '--timeout' && args[i + 1]) {
-      result.timeout = parseInt(args[i + 1]);
+      options.timeout = parseInt(args[i + 1]);
       i++;
+    } else if (args[i] === '-') {
+      testFile = args[i];
+    } else if (!args[i].startsWith('--') && !args[i].startsWith('-')) {
+      testFile = args[i];
     }
   }
   
-  return result;
+  return { options, testFile };
 }
 
 class TestRunner {
@@ -289,17 +305,95 @@ const TESTS: TestCase[] = [
   }
 ];
 
-async function runAllTests(options: TestOptions) {
+async function loadTests(testFile: string | undefined, options: TestOptions): Promise<{ tests: TestCase[]; name?: string }> {
+  if (!testFile) {
+    return { tests: TESTS };
+  }
+  
+  let jsonContent: string;
+  
+  if (testFile === '-') {
+    try {
+      jsonContent = await readStdin();
+      if (!jsonContent.trim()) {
+        console.error('Error: stdin is empty');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`Error reading stdin: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+  } else {
+    try {
+      jsonContent = readFileSync(testFile, 'utf-8');
+    } catch (err) {
+      console.error(`Error reading file ${testFile}: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+  }
+  
+  let testFileData: TestFile;
+  try {
+    testFileData = JSON.parse(jsonContent);
+  } catch (err) {
+    console.error(`Error parsing JSON: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  }
+  
+  if (!testFileData.tests || !Array.isArray(testFileData.tests)) {
+    console.error('Error: JSON must contain a "tests" array');
+    process.exit(1);
+  }
+  
+  if (testFileData.backend && !options.backend) {
+    options.backend = testFileData.backend;
+  }
+  if (testFileData.model && !options.model) {
+    options.model = testFileData.model;
+  }
+  if (testFileData.timeout && !options.timeout) {
+    options.timeout = testFileData.timeout;
+  }
+  
+  return { 
+    tests: testFileData.tests, 
+    name: testFileData.name 
+  };
+}
+
+function readStdin(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    
+    process.stdin.resume();
+    
+    process.stdin.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    
+    process.stdin.on('end', () => {
+      const result = Buffer.concat(chunks).toString('utf-8');
+      resolve(result);
+    });
+    
+    process.stdin.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+async function runAllTests(tests: TestCase[], options: TestOptions, suiteName?: string) {
   console.log('RXCAFE Test Runner');
+  if (suiteName) console.log(`Suite: ${suiteName}`);
   console.log(`Backend: ${options.backend || 'default'}`);
   if (options.model) console.log(`Model: ${options.model}`);
-  console.log(`Tests: ${TESTS.length}`);
+  console.log(`Tests: ${tests.length}`);
   console.log('');
   
   const runner = new TestRunner(options);
   const results: TestResult[] = [];
   
-  for (const test of TESTS) {
+  for (const test of tests) {
     runner.clearHistory();
     const result = await runner.runTest(test);
     results.push(result);
@@ -330,5 +424,5 @@ async function runAllTests(options: TestOptions) {
   process.exit(0);
 }
 
-const options = parseArgs();
-runAllTests(options);
+const { options, testFile } = parseArgs();
+loadTests(testFile, options).then(({ tests, name }) => runAllTests(tests, options, name));
