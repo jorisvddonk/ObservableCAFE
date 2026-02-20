@@ -295,6 +295,7 @@ class RXCafeChat {
                 this.addSystemMessage(`Session created with ${this.backend}${this.model ? ' (' + this.model + ')' : ''}`);
                 this.addSystemMessage('Use /web URL to fetch web content (untrusted by default)');
                 this.hideBackendModal();
+                this.messageInput.focus();
             }
         } catch (error) {
             console.error('Failed to create session:', error);
@@ -317,6 +318,7 @@ class RXCafeChat {
             await this.handleWebCommand(url);
             this.messageInput.value = '';
             this.messageInput.style.height = 'auto';
+            this.messageInput.focus();
             return;
         }
         
@@ -324,6 +326,7 @@ class RXCafeChat {
         this.addMessage('user', message);
         this.messageInput.value = '';
         this.messageInput.style.height = 'auto';
+        this.messageInput.focus();
         
         // Start generation
         this.isGenerating = true;
@@ -387,6 +390,7 @@ class RXCafeChat {
             this.currentMessageEl = null;
             this.currentContent = '';
             this.updateUIState();
+            this.messageInput.focus();
         }
     }
     
