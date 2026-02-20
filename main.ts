@@ -32,6 +32,7 @@ import {
   getSession,
   fetchWebContent,
   toggleChunkTrust,
+  setSystemPrompt,
   listModels,
   processChatMessage,
   abortGeneration,
@@ -400,13 +401,19 @@ async function initTelegramBot(): Promise<void> {
       }
       
       if (text.startsWith('/help')) {
-        await telegramBot!.sendMessage(chatId, `*Available Commands:*\n\n/web <URL> - Fetch web content (untrusted by default)\n/help - Show this help\n\n*Web Content Trust System:*\nWhen you fetch web content, it's marked as untrusted and won't be used by the LLM until you click the Trust button.`, { parseMode: 'Markdown' });
+        await telegramBot!.sendMessage(chatId, `*Available Commands:*\n\n/web <URL> - Fetch web content (untrusted by default)\n/system <prompt> - Set system prompt for LLM\n/help - Show this help\n\n*Web Content Trust System:*\nWhen you fetch web content, it's marked as untrusted and won't be used by the LLM until you click the Trust button.`, { parseMode: 'Markdown' });
         return;
       }
       
       if (text.startsWith('/web ')) {
         const url = text.slice(5).trim();
         await handleTelegramWebCommand(chatId, session, url);
+        return;
+      }
+      
+      if (text.startsWith('/system ')) {
+        const prompt = text.slice(8).trim();
+        handleTelegramSystemCommand(chatId, session, prompt);
         return;
       }
       
@@ -467,6 +474,13 @@ async function handleTelegramWebCommand(chatId: number, session: Session, url: s
   } catch (error) {
     await telegramBot.sendMessage(chatId, `❌ Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+function handleTelegramSystemCommand(chatId: number, session: Session, prompt: string): void {
+  if (!telegramBot) return;
+  
+  setSystemPrompt(session, prompt);
+  telegramBot.sendMessage(chatId, `✅ System prompt set:\n\n\`${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}\``, { parseMode: 'Markdown' });
 }
 
 async function handleTelegramMessage(chatId: number, session: Session, message: string): Promise<void> {
@@ -673,6 +687,27 @@ async function handleFetchWeb(sessionId: string, url: string): Promise<Response>
   }
 }
 
+async function handleSetSystemPrompt(sessionId: string, prompt: string): Promise<Response> {
+  const session = getSession(sessionId);
+  
+  if (!session) {
+    return new Response(JSON.stringify({ error: 'Session not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const chunk = setSystemPrompt(session, prompt || null);
+  
+  return new Response(JSON.stringify({
+    success: true,
+    chunk: chunk,
+    message: prompt ? 'System prompt set' : 'System prompt cleared'
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 async function handleToggleTrust(sessionId: string, chunkId: string, trusted: boolean): Promise<Response> {
   const session = getSession(sessionId);
   
@@ -711,6 +746,19 @@ async function handleChatStream(
   if (!session) {
     return new Response(JSON.stringify({ error: 'Session not found' }), {
       status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Handle /system command
+  if (message.startsWith('/system ')) {
+    const prompt = message.slice(8).trim();
+    const chunk = setSystemPrompt(session, prompt);
+    return new Response(JSON.stringify({
+      type: 'system',
+      chunk: chunk,
+      message: 'System prompt set'
+    }), {
       headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -947,6 +995,16 @@ const server = serve({
       }
       
       const response = await handleFetchWeb(sessionId, urlToFetch);
+      return addCors(response, corsHeaders);
+    }
+    
+    // System prompt endpoint
+    if (pathname.match(/^\/api\/session\/[^/]+\/system$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json();
+      const prompt = body.prompt;
+      
+      const response = await handleSetSystemPrompt(sessionId, prompt);
       return addCors(response, corsHeaders);
     }
     

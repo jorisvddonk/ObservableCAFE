@@ -321,7 +321,7 @@ class RXCafeChat {
                 this.chunkElements.clear();
                 this.rawChunks = [];
                 this.addSystemMessage(`Session created with ${this.backend}${this.model ? ' (' + this.model + ')' : ''}`);
-                this.addSystemMessage('Use /web URL to fetch web content (untrusted by default)');
+                this.addSystemMessage('Commands: /web URL | /system prompt');
                 this.hideBackendModal();
                 this.messageInput.focus();
                 this.updateInspector();
@@ -345,6 +345,15 @@ class RXCafeChat {
         if (message.startsWith('/web ')) {
             const url = message.slice(5).trim();
             await this.handleWebCommand(url);
+            this.messageInput.value = '';
+            this.messageInput.style.height = 'auto';
+            this.messageInput.focus();
+            return;
+        }
+        
+        if (message.startsWith('/system ')) {
+            const prompt = message.slice(8).trim();
+            await this.handleSystemCommand(prompt);
             this.messageInput.value = '';
             this.messageInput.style.height = 'auto';
             this.messageInput.focus();
@@ -468,6 +477,55 @@ class RXCafeChat {
             console.error('Failed to fetch web content:', error);
             this.showError('Failed to fetch web content. Is the server running?');
         }
+    }
+    
+    async handleSystemCommand(prompt) {
+        if (!prompt) {
+            this.showError('Please provide a prompt: /system You are a helpful assistant');
+            return;
+        }
+        
+        try {
+            const response = await fetch(this.apiUrl(`/api/session/${this.sessionId}/system`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.addSystemChunk(data.chunk, prompt);
+            } else {
+                this.showError(data.error || 'Failed to set system prompt');
+            }
+        } catch (error) {
+            console.error('Failed to set system prompt:', error);
+            this.showError('Failed to set system prompt. Is the server running?');
+        }
+    }
+    
+    addSystemChunk(chunk, prompt) {
+        this.addRawChunk(chunk);
+        
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message system-prompt';
+        messageEl.dataset.chunkId = chunk.id;
+        
+        const headerEl = document.createElement('div');
+        headerEl.className = 'system-header';
+        headerEl.innerHTML = '<span class="system-label">⚙️ System Prompt</span>';
+        
+        const contentEl = document.createElement('div');
+        contentEl.className = 'message-content';
+        contentEl.textContent = prompt;
+        
+        messageEl.appendChild(headerEl);
+        messageEl.appendChild(contentEl);
+        
+        this.messagesEl.appendChild(messageEl);
+        this.chunkElements.set(chunk.id, messageEl);
+        this.scrollToBottom();
     }
     
     addWebChunk(chunk) {
@@ -717,6 +775,7 @@ class RXCafeChat {
     
     getChunkRole(chunk) {
         const role = chunk.annotations?.['chat.role'];
+        if (role === 'system') return 'system';
         if (role) return role;
         if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url']) return 'web';
         if (chunk.producer.includes('kobold') || chunk.producer.includes('ollama') || chunk.producer === 'com.rxcafe.assistant') return 'assistant';

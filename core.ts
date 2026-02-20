@@ -139,6 +139,7 @@ export interface Session {
   abortController: AbortController | null;
   trustedChunks: Set<string>;
   callbacks: ChatCallbacks | null;
+  systemPrompt: string | null;
 }
 
 const sessions = new Map<string, Session>();
@@ -166,7 +167,8 @@ export function createSession(
     model,
     abortController: null,
     trustedChunks: new Set(),
-    callbacks: null
+    callbacks: null,
+    systemPrompt: null
   };
   
   outputStream.subscribe((chunk) => {
@@ -217,7 +219,7 @@ async function processWithLLM(chunk: Chunk, session: Session, tracing: boolean):
     return chunk;
   }
   
-  const context = buildConversationContext(session.history, chunk.id);
+  const context = buildConversationContext(session.history, chunk.id, session.systemPrompt);
   const currentMessage = chunk.content as string;
   
   const prompt = context 
@@ -398,6 +400,18 @@ export function toggleChunkTrust(
   }
 }
 
+export function setSystemPrompt(session: Session, prompt: string | null): Chunk {
+  session.systemPrompt = prompt;
+  
+  const chunk = createTextChunk(prompt || '', 'com.rxcafe.system-prompt', {
+    'chat.role': 'system',
+    'system.prompt': true
+  });
+  
+  session.history.push(chunk);
+  return chunk;
+}
+
 // =============================================================================
 // Pipeline Evaluators
 // =============================================================================
@@ -439,8 +453,12 @@ export function createTrustFilter(): Evaluator {
   };
 }
 
-export function buildConversationContext(history: Chunk[], excludeChunkId?: string): string {
+export function buildConversationContext(history: Chunk[], excludeChunkId?: string, systemPrompt?: string | null): string {
   const contextParts: string[] = [];
+  
+  if (systemPrompt) {
+    contextParts.push(`System: ${systemPrompt}`);
+  }
   
   for (const chunk of history) {
     if (chunk.id === excludeChunkId) continue;
