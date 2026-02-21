@@ -121,6 +121,7 @@ class RXCafeChat {
         this.messageInput = document.getElementById('message-input');
         this.sendBtn = document.getElementById('send-btn');
         this.abortBtn = document.getElementById('abort-btn');
+        this.copySessionIdBtn = document.getElementById('copy-session-id-btn');
         
         // Modal elements
         this.backendModal = document.getElementById('backend-modal');
@@ -185,6 +186,7 @@ class RXCafeChat {
         this.cancelBtn.addEventListener('click', () => this.hideBackendModal());
         this.sendBtn.addEventListener('click', () => this.sendMessage());
         this.abortBtn.addEventListener('click', () => this.abortGeneration());
+        this.copySessionIdBtn.addEventListener('click', () => this.copySessionId());
         
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -511,8 +513,7 @@ class RXCafeChat {
                     }
                 }
                 
-                this.messageInput.disabled = false;
-                this.sendBtn.disabled = false;
+                this.updateUIState();
                 this.updateInspector();
                 this.renderSidebarSessionList();
 
@@ -770,8 +771,7 @@ class RXCafeChat {
                 if (this.isBackground) info.push('[background]');
                 this.backendInfoEl.textContent = info.join(' | ');
                 
-                this.messageInput.disabled = false;
-                this.sendBtn.disabled = false;
+                this.updateUIState();
                 this.messagesEl.innerHTML = '';
                 this.chunkElements.clear();
                 this.rawChunks = [];
@@ -1184,6 +1184,17 @@ class RXCafeChat {
             console.error('Failed to abort:', error);
         }
     }
+
+    copySessionId() {
+        if (!this.sessionId) return;
+        navigator.clipboard.writeText(this.sessionId).then(() => {
+            const originalText = this.copySessionIdBtn.textContent;
+            this.copySessionIdBtn.textContent = '✅';
+            setTimeout(() => {
+                this.copySessionIdBtn.textContent = originalText;
+            }, 2000);
+        });
+    }
     
     addMessage(role, content, chunkId = null) {
         const messageEl = this.createMessageElement(role, content);
@@ -1386,6 +1397,7 @@ class RXCafeChat {
         this.sendBtn.style.display = this.isGenerating ? 'none' : 'block';
         this.abortBtn.style.display = this.isGenerating ? 'block' : 'none';
         this.messageInput.disabled = this.isGenerating || !this.sessionId;
+        this.copySessionIdBtn.style.display = this.sessionId ? 'inline-block' : 'none';
     }
     
     toggleInspector() {

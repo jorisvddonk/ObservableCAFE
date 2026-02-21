@@ -21,11 +21,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { Subject, Observable, merge, EMPTY, from, type ObservableInput } from 'rxjs';
+import { Subject, Observable, merge, EMPTY, from, type ObservableInput, Subscription } from 'rxjs';
 import { filter, map, mergeMap, catchError, tap, type OperatorFunction } from 'rxjs/operators';
 import type { Chunk, Evaluator } from './chunk.js';
 
-export { Subject, Observable, merge, EMPTY, from };
+export { Subject, Observable, merge, EMPTY, from, Subscription };
 export { filter, map, mergeMap, catchError, tap };
 export type { OperatorFunction };
 

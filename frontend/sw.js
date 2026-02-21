@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rxcafe-v33';
+const CACHE_NAME = 'rxcafe-v35';
 const STATIC_ASSETS = [
   '/',
   '/app.js',

@@ -132,6 +132,60 @@ export class TelegramBot {
     }
   }
 
+  async sendPhoto(chatId: number, photo: Uint8Array | string, caption?: string): Promise<TelegramMessage> {
+    const formData = new FormData();
+    formData.append('chat_id', chatId.toString());
+    
+    if (photo instanceof Uint8Array) {
+      const blob = new Blob([photo], { type: 'image/png' });
+      formData.append('photo', blob, 'photo.png');
+    } else {
+      formData.append('photo', photo);
+    }
+    
+    if (caption) {
+      formData.append('caption', caption);
+    }
+
+    const response = await fetch(`${this.baseUrl}/sendPhoto`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(`Failed to send photo: ${data.description}`);
+    }
+    return data.result;
+  }
+
+  async sendAudio(chat_id: number, audio: Uint8Array | string, caption?: string): Promise<TelegramMessage> {
+    const formData = new FormData();
+    formData.append('chat_id', chat_id.toString());
+    
+    if (audio instanceof Uint8Array) {
+      const blob = new Blob([audio], { type: 'audio/wav' });
+      formData.append('audio', blob, 'audio.wav');
+    } else {
+      formData.append('audio', audio);
+    }
+    
+    if (caption) {
+      formData.append('caption', caption);
+    }
+
+    const response = await fetch(`${this.baseUrl}/sendAudio`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(`Failed to send audio: ${data.description}`);
+    }
+    return data.result;
+  }
+
   startPolling(): void {
     if (this.pollingActive) {
       console.log('Polling already active');
