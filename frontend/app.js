@@ -59,12 +59,14 @@ class RXCafeChat {
         this.currentMessageEl = null;
         this.currentContent = '';
         this.chunkElements = new Map();
-        this.rawChunks = [];
+        this.rawChunks = []; this._elCounter = 0;
         this.contextMenuChunkId = null;
         this.token = this.getToken();
         this.inspectorVisible = false;
         this.agents = [];
         this.knownSessions = [];
+        this.eventSource = null;
+        this._reconnectTimer = null;
         
         this.init();
     }
@@ -397,9 +399,14 @@ class RXCafeChat {
     }
     
     async switchToSession(sessionId) {
+        console.log(`[RXCAFE] switchToSession: ${sessionId}`);
+        this.disconnectStream();
+
         try {
+            console.log(`[RXCAFE] Fetching history for ${sessionId}...`);
             const response = await fetch(this.apiUrl(`/api/session/${sessionId}/history`));
             const data = await response.json();
+            console.log(`[RXCAFE] History response:`, data.sessionId, `chunks:`, data.chunks?.length ?? 0);
             
             if (data.sessionId) {
                 this.sessionId = data.sessionId;
@@ -424,6 +431,7 @@ class RXCafeChat {
                 this.rawChunks = [];
                 
                 if (data.chunks && data.chunks.length > 0) {
+                    console.log(`[RXCAFE] Rendering ${data.chunks.length} history chunks`);
                     for (const chunk of data.chunks) {
                         this.addRawChunk(chunk);
                         this.renderChunk(chunk);
@@ -434,10 +442,108 @@ class RXCafeChat {
                 this.sendBtn.disabled = false;
                 this.updateSessionSelect();
                 this.updateInspector();
+
+                // Connect SSE stream for live updates
+                this.connectStream(sessionId);
             }
         } catch (error) {
-            console.error('Failed to switch session:', error);
+            console.error('[RXCAFE] Failed to switch session:', error);
             this.showError('Failed to switch session');
+        }
+    }
+
+    connectStream(sessionId) {
+        console.log(`[RXCAFE] connectStream: ${sessionId}`);
+        this.disconnectStream();
+
+        const url = this.apiUrl(`/api/session/${sessionId}/stream`);
+        console.log(`[RXCAFE] Opening EventSource: ${url}`);
+        const es = new EventSource(url);
+        this.eventSource = es;
+
+        es.onopen = () => {
+            console.log(`[RXCAFE] SSE connected for session ${sessionId}`);
+        };
+
+        es.onmessage = (event) => {
+            console.log(`[RXCAFE] SSE raw event:`, event.data.slice(0, 120));
+            try {
+                const data = JSON.parse(event.data);
+                console.log(`[RXCAFE] SSE parsed type="${data.type}"`, data.type === 'chunk' ? `id=${data.chunk?.id}` : '');
+
+                if (data.type === 'chunk') {
+                    const chunk = data.chunk;
+                    const role = chunk.annotations?.['chat.role'];
+
+                    if (this.chunkElements.has(chunk.id)) {
+                        // Already tracked by id - skip
+                        console.log(`[RXCAFE] Chunk already rendered, skipping:`, chunk.id);
+                        return;
+                    }
+
+                    // Check if this matches a pending eagerly-rendered element
+                    if (role === 'user' && this._pendingUserMsg) {
+                        console.log(`[RXCAFE] SSE user chunk claimed by pending element elId=${this._pendingUserMsg.dataset.elId}, registering id:`, chunk.id);
+                        this._pendingUserMsg.dataset.chunkId = chunk.id;
+                        this.chunkElements.set(chunk.id, this._pendingUserMsg);
+                        this._pendingUserMsg = null;
+                        this.addRawChunk(chunk);
+                        this.updateInspector();
+                        return;
+                    }
+
+                    const assistantEl = (this.currentMessageEl?.dataset.pendingAssistant ? this.currentMessageEl : null) 
+                                        || (this._lastAssistantEl?.dataset.pendingAssistant ? this._lastAssistantEl : null);
+
+                    if (role === 'assistant' && assistantEl) {
+                        console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
+                        assistantEl.dataset.chunkId = chunk.id;
+                        this.chunkElements.set(chunk.id, assistantEl);
+                        delete assistantEl.dataset.pendingAssistant;
+                        if (assistantEl === this._lastAssistantEl) this._lastAssistantEl = null;
+                        this.addRawChunk(chunk);
+                        this.updateInspector();
+                        return;
+                    }
+
+                    console.log(`[RXCAFE] New chunk from stream, rendering:`, chunk.id, chunk.content?.slice?.(0, 60));
+                    this.addRawChunk(chunk);
+                    this.renderChunk(chunk);
+                    this.updateInspector();
+                }
+            } catch (e) {
+                console.error('[RXCAFE] SSE parse error:', e, event.data);
+            }
+        };
+
+        es.onerror = (err) => {
+            // Guard: ignore stale closures from replaced connections
+            if (es !== this.eventSource) return;
+
+            console.warn(`[RXCAFE] SSE error/disconnect for session ${sessionId}`, err);
+            es.close();
+            this.eventSource = null;
+
+            if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = setTimeout(() => {
+                this._reconnectTimer = null;
+                if (this.sessionId === sessionId) {
+                    console.log(`[RXCAFE] Reconnecting SSE for ${sessionId}...`);
+                    this.connectStream(sessionId);
+                }
+            }, 3000);
+        };
+    }
+
+    disconnectStream() {
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+        if (this.eventSource) {
+            console.log(`[RXCAFE] disconnectStream: closing EventSource`);
+            this.eventSource.close();
+            this.eventSource = null;
         }
     }
     
@@ -445,15 +551,16 @@ class RXCafeChat {
         const role = chunk.annotations?.['chat.role'];
         const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
         const isSystem = role === 'system';
+        console.log(`[RXCAFE] renderChunk (from ${new Error().stack.split('\n')[2].trim()}) id=${chunk.id} role=${role} content="${String(chunk.content ?? '').slice(0,60)}"`);
         
         if (isWeb) {
             this.addWebChunk(chunk);
         } else if (isSystem) {
             this.addSystemChunk(chunk, chunk.content);
         } else if (role === 'user') {
-            this.addMessage('user', chunk.content);
+            this.addMessage('user', chunk.content, chunk.id);
         } else if (role === 'assistant') {
-            this.addMessage('assistant', chunk.content);
+            this.addMessage('assistant', chunk.content, chunk.id);
         }
     }
     
@@ -528,6 +635,8 @@ class RXCafeChat {
                 this.hideBackendModal();
                 this.messageInput.focus();
                 this.updateInspector();
+                // Connect SSE stream for live updates
+                this.connectStream(data.sessionId);
             }
         } catch (error) {
             console.error('Failed to create session:', error);
@@ -572,8 +681,12 @@ class RXCafeChat {
             return;
         }
         
-        // Regular message
-        this.addMessage('user', message);
+        // Regular message - render eagerly but mark as pending so SSE dedup works.
+        // We don't know the real chunk id yet; use a sentinel that SSE will overwrite.
+        this._pendingUserMsg = this.createMessageElement('user', message);
+        this._pendingUserMsg.dataset.pendingUser = 'true';
+        this.messagesEl.appendChild(this._pendingUserMsg);
+        this.scrollToBottom();
         this.messageInput.value = '';
         this.messageInput.style.height = 'auto';
         this.messageInput.focus();
@@ -582,9 +695,10 @@ class RXCafeChat {
         this.isGenerating = true;
         this.updateUIState();
         
-        // Create streaming message container
+        // Create streaming message container - mark as pending so SSE skips it
         this.currentMessageEl = this.createMessageElement('assistant', '');
         this.currentMessageEl.classList.add('streaming');
+        this.currentMessageEl.dataset.pendingAssistant = 'true';
         this.currentContent = '';
         
         // Add loading indicator
@@ -595,7 +709,7 @@ class RXCafeChat {
         
         this.messagesEl.appendChild(this.currentMessageEl);
         this.scrollToBottom();
-        
+
         try {
             const response = await fetch(this.apiUrl(`/api/chat/${this.sessionId}`), {
                 method: 'POST',
@@ -636,16 +750,11 @@ class RXCafeChat {
             this.showErrorInMessage(this.currentMessageEl, 'Failed to get response. Check if the LLM server is running.');
         } finally {
             this.isGenerating = false;
-            this.currentMessageEl.classList.remove('streaming');
-            if (this.currentContent && this.sessionId) {
-                this.addRawChunk({
-                    id: `assistant-${Date.now()}`,
-                    timestamp: Date.now(),
-                    contentType: 'text',
-                    content: this.currentContent,
-                    producer: 'com.rxcafe.assistant',
-                    annotations: { 'chat.role': 'assistant' }
-                });
+            if (this.currentMessageEl) {
+                this.currentMessageEl.classList.remove('streaming');
+                // Ensure we mark it as no longer active but still claimable by SSE
+                this.currentMessageEl.dataset.pendingAssistant = 'true';
+                this._lastAssistantEl = this.currentMessageEl;
             }
             this.currentMessageEl = null;
             this.currentContent = '';
@@ -913,14 +1022,21 @@ class RXCafeChat {
         }
     }
     
-    addMessage(role, content) {
+    addMessage(role, content, chunkId = null) {
         const messageEl = this.createMessageElement(role, content);
+        console.log(`[RXCAFE] addMessage elId=${messageEl.dataset.elId} role=${role} chunkId=${chunkId}`);
+        if (chunkId) {
+            messageEl.dataset.chunkId = chunkId;
+            this.chunkElements.set(chunkId, messageEl);
+        }
         this.messagesEl.appendChild(messageEl);
         this.scrollToBottom();
     }
     
     createMessageElement(role, content) {
         const messageEl = document.createElement('div');
+        this._elCounter++;
+        messageEl.dataset.elId = this._elCounter;
         messageEl.className = `message ${role}`;
         
         const contentEl = document.createElement('div');
@@ -995,6 +1111,7 @@ class RXCafeChat {
         } else {
             this.rawChunks.push(chunk);
         }
+        console.log(`[RXCAFE] addRawChunk id=${chunk.id} total=${this.rawChunks.length}`);
         if (this.inspectorVisible) {
             this.updateInspector();
         }

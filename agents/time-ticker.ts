@@ -7,6 +7,8 @@ export const timeTickerAgent: AgentDefinition = {
   startInBackground: true,
   
   initialize(session: AgentSessionContext) {
+    console.log(`[TimeTicker] Initializing time-ticker agent for session ${session.id}`);
+    
     const emitTime = () => {
       const now = new Date();
       const timeStr = now.toLocaleTimeString();
@@ -16,6 +18,7 @@ export const timeTickerAgent: AgentDefinition = {
         { 'chat.role': 'assistant', 'time-ticker': true }
       );
       session.outputStream.next(chunk);
+      console.log(`[TimeTicker] Emitting time: ${timeStr}`);
     };
     
     emitTime();
@@ -25,11 +28,13 @@ export const timeTickerAgent: AgentDefinition = {
     session.pipelineSubscription = {
       unsubscribe: () => {
         clearInterval(intervalId);
+        console.log(`[TimeTicker] Stopping time-ticker for session ${session.id}`);
       }
     } as any;
   },
   
   destroy(session: AgentSessionContext) {
+    console.log(`[TimeTicker] Destroying time-ticker agent for session ${session.id}`);
     if (session.pipelineSubscription) {
       session.pipelineSubscription.unsubscribe();
     }

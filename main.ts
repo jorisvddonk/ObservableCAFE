@@ -1039,18 +1039,89 @@ async function handleChatStream(
         controller.close();
       });
       
-      // Send confirmation that user chunk was received
-      const userChunk = createTextChunk(message, 'com.rxcafe.user', {
-        'chat.role': 'user'
-      });
-      
-      controller.enqueue(`data: ${JSON.stringify({
-        type: 'user',
-        chunk: userChunk
-      })}\n\n`);
+      // User chunk confirmation sent via general SSE stream
     },
     cancel() {
       abortGeneration(session);
+    }
+  });
+  
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    }
+  });
+}
+
+function handleSessionStream(sessionId: string): Response {
+  let session = getSession(sessionId);
+  
+  if (!session) {
+    return new Response(JSON.stringify({ error: 'Session not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Capture cleanup in closure so cancel() can reach it without relying on
+  // `this` (which refers to the underlyingSource object, not the controller).
+  let cleanup: (() => void) | null = null;
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      
+      // Send initial connection message
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected', sessionId })}\n\n`));
+      
+      // Subscribe to output stream
+      const outputSub = session!.outputStream.subscribe({
+        next: (chunk: Chunk) => {
+          if (chunk.contentType === 'text') {
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                type: 'chunk',
+                chunk: chunk
+              })}\n\n`));
+            } catch {
+              // Controller may be closed if the client disconnected
+            }
+          }
+        },
+        error: (err: Error) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: err.message
+            })}\n\n`));
+          } catch { /* ignore */ }
+        }
+      });
+      
+      // Subscribe to error stream
+      const errorSub = session!.errorStream.subscribe({
+        next: (err: Error) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: err.message
+            })}\n\n`));
+          } catch { /* ignore */ }
+        }
+      });
+      
+      cleanup = () => {
+        outputSub.unsubscribe();
+        errorSub.unsubscribe();
+      };
+    },
+    cancel() {
+      if (cleanup) {
+        cleanup();
+        cleanup = null;
+      }
     }
   });
   
@@ -1303,6 +1374,12 @@ const server = serve({
       const sessionId = pathname.split('/')[3];
       const response = await handleGetHistory(sessionId);
       return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/stream$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = handleSessionStream(sessionId);
+      return response;
     }
     
     // Error stream endpoint (SSE)
