@@ -18,7 +18,6 @@ export const timeTickerAgent: AgentDefinition = {
         { 'chat.role': 'assistant', 'time-ticker': true }
       );
       session.outputStream.next(chunk);
-      console.log(`[TimeTicker] Emitting time: ${timeStr}`);
     };
     
     emitTime();

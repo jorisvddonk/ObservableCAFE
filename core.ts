@@ -254,10 +254,10 @@ export async function createSession(
     next: (chunk) => {
       const existingIndex = session.history.findIndex(c => c.id === chunk.id);
       if (existingIndex !== -1) {
-        console.log(`[Core] Updating history chunk: ${chunk.id} (session ${session.id})`);
+        //console.log(`[Core] Updating history chunk: ${chunk.id} (session ${session.id})`);
         session.history[existingIndex] = chunk;
       } else {
-        console.log(`[Core] Adding new history chunk: ${chunk.id} (session ${session.id})`);
+        //console.log(`[Core] Adding new history chunk: ${chunk.id} (session ${session.id})`);
         session.history.push(chunk);
       }
     }
