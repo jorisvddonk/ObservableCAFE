@@ -95,6 +95,11 @@ class RXCafeChat {
         this.bindEvents();
         this.autoResize();
         this.hideContextMenuOnClick();
+        this.loadSessionsOnStart();
+    }
+    
+    async loadSessionsOnStart() {
+        await this.loadSessions();
     }
     
     cacheElements() {
@@ -361,6 +366,14 @@ class RXCafeChat {
             if (data.sessions) {
                 this.knownSessions = data.sessions;
                 this.updateSessionSelect();
+                
+                // Auto-connect to most recent non-background session if no active session
+                if (!this.sessionId && data.sessions.length > 0) {
+                    const recentSession = data.sessions.find(s => !s.isBackground) || data.sessions[0];
+                    if (recentSession) {
+                        await this.switchToSession(recentSession.id);
+                    }
+                }
             }
         } catch (error) {
             console.error('Failed to load sessions:', error);
@@ -378,7 +391,8 @@ class RXCafeChat {
             this.knownSessions.map(s => {
                 const isCurrent = s.id === this.sessionId;
                 const bg = s.isBackground ? ' [bg]' : '';
-                return `<option value="${s.id}" ${isCurrent ? 'selected' : ''}>${s.agentName}${bg}</option>`;
+                const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
+                return `<option value="${s.id}" ${isCurrent ? 'selected' : ''}>${s.agentName}${bg} (${shortId})</option>`;
             }).join('');
     }
     
