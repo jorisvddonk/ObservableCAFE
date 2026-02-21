@@ -56,7 +56,7 @@ export const imagePainterAgent: AgentDefinition = {
       
       // Notify the frontend that generation is complete
       if (session.callbacks?.onFinish) {
-        session.callbacks.onFinish(responseText);
+        session.callbacks.onFinish();
       }
     });
     

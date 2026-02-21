@@ -642,11 +642,11 @@ async function handleTelegramMessage(chatId: number, session: Session, message: 
             });
           }
         },
-        onFinish: (response: string) => {
-          console.log(`[Telegram] LLM evaluation complete. Tokens: ${tokenCount}, Response length: ${response.length}`);
+        onFinish: () => {
+          console.log(`[Telegram] LLM evaluation complete. Tokens: ${tokenCount}, Response length: ${fullResponse.length}`);
           
           // Final message update
-          finalizeTelegramMessage(chatId, response, messageId, statusMessage?.message_id);
+          finalizeTelegramMessage(chatId, fullResponse, messageId, statusMessage?.message_id);
         },
         onError: (error: Error) => {
           console.error('[Telegram] LLM error:', error);
@@ -1018,21 +1018,18 @@ async function handleChatStream(
   // Build SSE response stream
   const stream = new ReadableStream({
     start(controller) {
-      let fullResponse = '';
-      
       // Process the chat message
       processChatMessage(
         session,
         message,
         {
           onToken: (token: string) => {
-            fullResponse += token;
             controller.enqueue(`data: ${JSON.stringify({
               type: 'token',
               token: token
             })}\n\n`);
           },
-          onFinish: (response: string) => {
+          onFinish: () => {
             controller.enqueue(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
             controller.enqueue(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
             controller.close();

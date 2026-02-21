@@ -71,7 +71,7 @@ export interface AgentEvaluator {
 
 export interface ChatCallbacks {
   onToken: (token: string) => void;
-  onFinish: (fullResponse: string) => void;
+  onFinish: () => void;
   onError: (error: Error) => void;
 }
 

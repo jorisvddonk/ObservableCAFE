@@ -853,8 +853,7 @@ class RXCafeChat {
                 if (this.currentMessageEl.dataset.pendingAssistant) {
                     this._lastAssistantEl = this.currentMessageEl;
                     
-                    // If it has no content at all, maybe it was a tool-only turn.
-                    // We'll give it 5 seconds to be claimed, then remove if empty.
+                    // Safety check: if no content arrived after 5s, remove the empty bubble
                     const el = this.currentMessageEl;
                     setTimeout(() => {
                         if (el.parentElement && el.dataset.pendingAssistant && !el.dataset.chunkId) {

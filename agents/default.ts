@@ -130,7 +130,7 @@ function processWithEvaluator(
         subscriber.next(assistantChunk);
         
         if (session.callbacks?.onFinish) {
-          session.callbacks.onFinish(fullResponse);
+          session.callbacks.onFinish();
         }
         
         await session.persistState();
