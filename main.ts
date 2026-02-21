@@ -42,6 +42,7 @@ import {
   restorePersistedSessions,
   listAgents as listAgentsFromCore,
   listActiveSessions,
+  deleteSession,
   setSessionStore,
   shutdown,
   type CoreConfig,
@@ -772,12 +773,21 @@ async function handleListSessions(): Promise<Response> {
           id: ps.id,
           agentName: ps.agentName,
           isBackground: ps.isBackground,
+          displayName: ps.id === ps.agentName ? ps.agentName : undefined // Default for background agents
         });
       }
     }
   }
   
   return new Response(JSON.stringify({ sessions: activeSessions }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+async function handleDeleteSession(sessionId: string): Promise<Response> {
+  const success = await deleteSession(sessionId);
+  
+  return new Response(JSON.stringify({ success, message: success ? 'Session deleted' : 'Session not found or could not be deleted' }), {
     headers: { 'Content-Type': 'application/json' }
   });
 }
@@ -847,6 +857,7 @@ async function handleGetHistory(sessionId: string): Promise<Response> {
     sessionId,
     backend: session.backend,
     model: session.model,
+    displayName: session.displayName,
     chunks: textChunks
   }), {
     headers: { 'Content-Type': 'application/json' }
@@ -1361,6 +1372,12 @@ const server = serve({
     if (pathname === '/api/session' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const response = await handleCreateSession(body);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleDeleteSession(sessionId);
       return addCors(response, corsHeaders);
     }
     

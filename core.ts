@@ -133,8 +133,10 @@ export interface Session {
   trustedChunks: Set<string>;
   callbacks: ChatCallbacks | null;
   systemPrompt: string | null;
+  displayName?: string;
   sessionConfig: SessionConfig;
   pipelineSubscription?: { unsubscribe: () => void };
+
   _agentContext?: AgentSessionContext;
 }
 
@@ -252,6 +254,12 @@ export async function createSession(
   
   outputStream.subscribe({
     next: (chunk) => {
+      // Check for session naming annotation
+      if (chunk.annotations['session.name']) {
+        session.displayName = String(chunk.annotations['session.name']);
+        console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
+      }
+      
       const existingIndex = session.history.findIndex(c => c.id === chunk.id);
       if (existingIndex !== -1) {
         //console.log(`[Core] Updating history chunk: ${chunk.id} (session ${session.id})`);
@@ -286,16 +294,18 @@ export function getSession(sessionId: string): Session | undefined {
   return sessions.get(sessionId);
 }
 
-export function deleteSession(sessionId: string): boolean {
+export async function deleteSession(sessionId: string): Promise<boolean> {
   const session = sessions.get(sessionId);
   if (session?.pipelineSubscription) {
     session.pipelineSubscription.unsubscribe();
   }
   
   if (sessionStore) {
-    sessionStore.deleteSession(sessionId).catch(err => {
+    try {
+      await sessionStore.deleteSession(sessionId);
+    } catch (err) {
       console.error(`Failed to delete session ${sessionId} from store:`, err);
-    });
+    }
   }
   
   return sessions.delete(sessionId);
@@ -305,11 +315,12 @@ export function listSessions(): string[] {
   return Array.from(sessions.keys());
 }
 
-export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean }> {
+export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean; displayName?: string }> {
   return Array.from(sessions.values()).map(s => ({
     id: s.id,
     agentName: s.agentName,
     isBackground: s.isBackground,
+    displayName: s.displayName,
   }));
 }
 

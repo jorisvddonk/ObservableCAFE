@@ -26,6 +26,7 @@
                 <button id="inspector-toggle-btn" class="btn btn-secondary" title="Toggle inspector">🔍</button>
                 <button id="theme-toggle-btn" class="btn btn-secondary" title="Toggle theme">🌙</button>
                 <button id="new-session-btn" class="btn btn-secondary">New Session</button>
+                <button id="manage-sessions-btn" class="btn btn-secondary">Manage Sessions</button>
             </div>
         </header>
         
@@ -149,6 +150,19 @@
         <div class="context-menu-item" id="context-trust">Trust Chunk</div>
         <div class="context-menu-item" id="context-untrust">Untrust Chunk</div>
         <div class="context-menu-item" id="context-copy">Copy Content</div>
+    </div>
+    
+    <!-- Sessions Management Modal -->
+    <div id="sessions-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Manage Sessions</h2>
+            <div id="session-list" class="session-list">
+                <p>Loading sessions...</p>
+            </div>
+            <div class="modal-actions">
+                <button id="sessions-close-btn" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
     </div>
     
     <script>

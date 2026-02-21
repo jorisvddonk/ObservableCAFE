@@ -144,6 +144,12 @@ class RXCafeChat {
         this.inspectorSession = document.getElementById('inspector-session');
         this.inspectorChunkCount = document.getElementById('inspector-chunk-count');
         this.inspectorChunks = document.getElementById('inspector-chunks');
+
+        // Sessions management elements
+        this.sessionsModal = document.getElementById('sessions-modal');
+        this.sessionList = document.getElementById('session-list');
+        this.manageSessionsBtn = document.getElementById('manage-sessions-btn');
+        this.sessionsCloseBtn = document.getElementById('sessions-close-btn');
     }
     
     bindEvents() {
@@ -200,6 +206,10 @@ class RXCafeChat {
         if (this.inspectorOverlay) {
             this.inspectorOverlay.addEventListener('click', () => this.hideInspector());
         }
+
+        // Sessions management events
+        this.manageSessionsBtn.addEventListener('click', () => this.showSessionsModal());
+        this.sessionsCloseBtn.addEventListener('click', () => this.hideSessionsModal());
     }
     
     hideContextMenuOnClick() {
@@ -361,13 +371,19 @@ class RXCafeChat {
     }
     
     async loadSessions() {
+        console.log('[RXCAFE] loadSessions called');
         try {
             const response = await fetch(this.apiUrl('/api/sessions'));
             const data = await response.json();
+            console.log('[RXCAFE] loadSessions data:', data);
             
             if (data.sessions) {
                 this.knownSessions = data.sessions;
                 this.updateSessionSelect();
+                if (this.sessionsModal.style.display === 'flex') {
+                    console.log('[RXCAFE] Updating session list in modal');
+                    this.renderSessionList();
+                }
                 
                 // Auto-connect to most recent non-background session if no active session
                 if (!this.sessionId && data.sessions.length > 0) {
@@ -392,9 +408,10 @@ class RXCafeChat {
         this.sessionSelect.innerHTML = '<option value="">Sessions</option>' +
             this.knownSessions.map(s => {
                 const isCurrent = s.id === this.sessionId;
+                const displayName = s.displayName || s.agentName;
                 const bg = s.isBackground ? ' [bg]' : '';
                 const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
-                return `<option value="${s.id}" ${isCurrent ? 'selected' : ''}>${s.agentName}${bg} (${shortId})</option>`;
+                return `<option value="${s.id}" ${isCurrent ? 'selected' : ''}>${displayName}${bg} (${shortId})</option>`;
             }).join('');
     }
     
@@ -417,10 +434,11 @@ class RXCafeChat {
                 if (sessionInfo) {
                     this.agentName = sessionInfo.agentName;
                     this.isBackground = sessionInfo.isBackground;
+                    if (data.displayName) sessionInfo.displayName = data.displayName;
                 }
                 
                 const info = [];
-                info.push(this.agentName || 'unknown');
+                info.push(data.displayName || this.agentName || 'unknown');
                 if (this.backend) info.push(this.backend);
                 if (this.model) info.push(this.model);
                 if (this.isBackground) info.push('[background]');
@@ -474,6 +492,25 @@ class RXCafeChat {
                 if (data.type === 'chunk') {
                     const chunk = data.chunk;
                     const role = chunk.annotations?.['chat.role'];
+
+                    // Check for session naming annotation
+                    if (chunk.annotations?.['session.name']) {
+                        const newName = chunk.annotations['session.name'];
+                        console.log(`[RXCAFE] Session renamed to: ${newName}`);
+                        const session = this.knownSessions.find(s => s.id === this.sessionId);
+                        if (session) {
+                            session.displayName = newName;
+                            this.updateSessionSelect();
+                            
+                            // Update header info if it's the current session
+                            const info = [];
+                            info.push(newName);
+                            if (this.backend) info.push(this.backend);
+                            if (this.model) info.push(this.model);
+                            if (this.isBackground) info.push('[background]');
+                            this.backendInfoEl.textContent = info.join(' | ');
+                        }
+                    }
 
                     if (this.chunkElements.has(chunk.id)) {
                         // Already tracked by id - skip
@@ -551,6 +588,12 @@ class RXCafeChat {
         const role = chunk.annotations?.['chat.role'];
         const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
         const isSystem = role === 'system';
+        
+        // Skip purely metadata chunks (like session naming) if they don't have a role
+        if (!role && chunk.annotations?.['session.name']) {
+            return;
+        }
+
         console.log(`[RXCAFE] renderChunk (from ${new Error().stack.split('\n')[2].trim()}) id=${chunk.id} role=${role} content="${String(chunk.content ?? '').slice(0,60)}"`);
         
         if (isWeb) {
@@ -1103,8 +1146,92 @@ class RXCafeChat {
             this.inspectorOverlay.style.display = 'none';
         }
     }
+
+    async showSessionsModal() {
+        this.sessionsModal.style.display = 'flex';
+        await this.loadSessions();
+        this.renderSessionList();
+    }
+
+    hideSessionsModal() {
+        this.sessionsModal.style.display = 'none';
+    }
+
+    renderSessionList() {
+        if (this.knownSessions.length === 0) {
+            this.sessionList.innerHTML = '<p>No sessions found.</p>';
+            return;
+        }
+
+        this.sessionList.innerHTML = this.knownSessions.map(s => {
+            const isCurrent = s.id === this.sessionId;
+            const displayName = s.displayName || s.agentName;
+            const bg = s.isBackground ? ' [background]' : '';
+            const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
+            
+            return `
+                <div class="session-item ${isCurrent ? 'active' : ''}">
+                    <div class="session-item-info">
+                        <div class="session-item-name">${displayName}${bg}</div>
+                        <div class="session-item-details">${shortId} • ${s.agentName}</div>
+                    </div>
+                    <div class="session-item-actions">
+                        ${!isCurrent ? `<button class="btn btn-primary btn-small" onclick="chat.switchToSessionFromModal('${s.id}')">Switch</button>` : ''}
+                        <button class="btn btn-danger btn-small" onclick="chat.deleteSession('${s.id}')">Delete</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async switchToSessionFromModal(sessionId) {
+        await this.switchToSession(sessionId);
+        this.hideSessionsModal();
+    }
+
+    async deleteSession(sessionId) {
+        if (!confirm('Are you sure you want to delete this session? History will be lost.')) return;
+        console.log(`[RXCAFE] Deleting session: ${sessionId}`);
+
+        try {
+            const response = await fetch(this.apiUrl(`/api/session/${sessionId}`), {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+            console.log(`[RXCAFE] Delete response:`, data);
+
+            if (data.success) {
+                if (this.sessionId === sessionId) {
+                    console.log('[RXCAFE] Deleted current session, clearing UI');
+                    this.sessionId = null;
+                    this.messagesEl.innerHTML = '<div class="welcome-message"><h2>Session Deleted</h2><p>Please create or select another session.</p></div>';
+                    this.backendInfoEl.textContent = 'No session';
+                    this.messageInput.disabled = true;
+                    this.sendBtn.disabled = true;
+                    this.disconnectStream();
+                }
+                await this.loadSessions();
+                console.log('[RXCAFE] Session list updated after delete');
+            } else {
+                this.showError(data.message || 'Failed to delete session');
+            }
+        } catch (error) {
+            console.error('Failed to delete session:', error);
+            this.showError('Error deleting session');
+        }
+    }
     
     addRawChunk(chunk) {
+        // Check for session naming annotation
+        if (chunk.annotations?.['session.name']) {
+            const newName = chunk.annotations['session.name'];
+            const session = this.knownSessions.find(s => s.id === this.sessionId);
+            if (session) {
+                session.displayName = newName;
+                this.updateSessionSelect();
+            }
+        }
+
         const existingIndex = this.rawChunks.findIndex(c => c.id === chunk.id);
         if (existingIndex !== -1) {
             this.rawChunks[existingIndex] = chunk;
@@ -1167,7 +1294,9 @@ class RXCafeChat {
     }
 }
 
+let chat;
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    new RXCafeChat();
+    chat = new RXCafeChat();
 });
