@@ -676,6 +676,7 @@ class RXCafeChat {
         const role = chunk.annotations?.['chat.role'];
         const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
         const isSystem = role === 'system';
+        const isTelegram = chunk.annotations?.['client.type'] === 'telegram';
         
         // Skip purely metadata chunks (like session naming) if they don't have a role
         if (!role && chunk.annotations?.['session.name']) {
@@ -704,6 +705,12 @@ class RXCafeChat {
         } else if (chunk.contentType === 'text') {
             if (role === 'user') {
                 const el = this.addMessage('user', chunk.content, chunk.id);
+                
+                // Show Telegram origin
+                if (isTelegram) {
+                    this.addTelegramLabel(el);
+                }
+
                 // Handle sentiment for history chunks
                 if (chunk.annotations && chunk.annotations['com.rxcafe.example.sentiment']) {
                     this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
@@ -711,6 +718,22 @@ class RXCafeChat {
             } else if (role === 'assistant') {
                 this.addMessage('assistant', chunk.content, chunk.id);
             }
+        }
+    }
+
+    addTelegramLabel(messageEl) {
+        if (!messageEl) return;
+        let labelEl = messageEl.querySelector('.telegram-label');
+        if (!labelEl) {
+            labelEl = document.createElement('div');
+            labelEl.className = 'message-meta telegram-label';
+            labelEl.textContent = 'via Telegram';
+            labelEl.style.fontSize = '0.65rem';
+            labelEl.style.marginTop = '0.2rem';
+            labelEl.style.fontStyle = 'italic';
+            labelEl.style.textAlign = 'right';
+            labelEl.style.opacity = '0.8';
+            messageEl.querySelector('.message-content').appendChild(labelEl);
         }
     }
     
