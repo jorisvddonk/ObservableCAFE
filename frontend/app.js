@@ -131,6 +131,7 @@ class RXCafeChat {
         
         // Inspector elements
         this.inspectorPanel = document.getElementById('inspector-panel');
+        this.inspectorOverlay = document.getElementById('inspector-overlay');
         this.inspectorToggleBtn = document.getElementById('inspector-toggle-btn');
         this.inspectorCloseBtn = document.getElementById('inspector-close-btn');
         this.inspectorSession = document.getElementById('inspector-session');
@@ -189,6 +190,9 @@ class RXCafeChat {
         // Inspector events
         this.inspectorToggleBtn.addEventListener('click', () => this.toggleInspector());
         this.inspectorCloseBtn.addEventListener('click', () => this.hideInspector());
+        if (this.inspectorOverlay) {
+            this.inspectorOverlay.addEventListener('click', () => this.hideInspector());
+        }
     }
     
     hideContextMenuOnClick() {
@@ -954,6 +958,9 @@ class RXCafeChat {
     toggleInspector() {
         this.inspectorVisible = !this.inspectorVisible;
         this.inspectorPanel.style.display = this.inspectorVisible ? 'flex' : 'none';
+        if (this.inspectorOverlay) {
+            this.inspectorOverlay.style.display = this.inspectorVisible ? 'block' : 'none';
+        }
         if (this.inspectorVisible) {
             this.updateInspector();
         }
@@ -962,6 +969,9 @@ class RXCafeChat {
     hideInspector() {
         this.inspectorVisible = false;
         this.inspectorPanel.style.display = 'none';
+        if (this.inspectorOverlay) {
+            this.inspectorOverlay.style.display = 'none';
+        }
     }
     
     addRawChunk(chunk) {

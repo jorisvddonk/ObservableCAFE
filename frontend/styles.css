@@ -27,6 +27,10 @@
     --web-bg-trusted: #ecfdf5;
     --web-border-untrusted: #ef4444;
     --web-bg-untrusted: #fef2f2;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
 }
 
 [data-theme="dark"] {
@@ -60,6 +64,8 @@ body {
     color: var(--text-color);
     height: 100vh;
     overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
 }
 
 #app {
@@ -72,6 +78,9 @@ body {
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
     padding: 1rem 1.5rem;
+    padding-top: calc(1rem + var(--safe-top));
+    padding-left: calc(1.5rem + var(--safe-left));
+    padding-right: calc(1.5rem + var(--safe-right));
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -99,6 +108,7 @@ body {
     color: var(--text-color);
     cursor: pointer;
     max-width: 200px;
+    touch-action: manipulation;
 }
 
 .session-select:hover {
@@ -125,6 +135,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .welcome-message {
@@ -190,6 +202,9 @@ body {
     background-color: var(--surface-color);
     border-top: 1px solid var(--border-color);
     padding: 1rem 1.5rem;
+    padding-bottom: calc(1rem + var(--safe-bottom));
+    padding-left: calc(1.5rem + var(--safe-left));
+    padding-right: calc(1.5rem + var(--safe-right));
 }
 
 .input-wrapper {
@@ -232,6 +247,8 @@ body {
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .btn:disabled {
@@ -663,10 +680,31 @@ body {
     
     .header {
         padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
     }
     
     .header h1 {
         font-size: 1.25rem;
+    }
+    
+    .header-info {
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+    
+    .session-select {
+        max-width: 120px;
+        flex: 1;
+    }
+    
+    #backend-info {
+        font-size: 0.75rem;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
     
     .messages {
@@ -675,6 +713,120 @@ body {
     
     .input-container {
         padding: 0.75rem 1rem;
+    }
+    
+    .input-wrapper {
+        gap: 0.5rem;
+    }
+    
+    #message-input {
+        font-size: 16px;
+        padding: 0.625rem 0.75rem;
+    }
+    
+    .btn {
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .btn-small {
+        padding: 0.375rem 0.625rem;
+    }
+    
+    #inspector-toggle-btn,
+    #theme-toggle-btn {
+        padding: 0.5rem;
+        min-width: 44px;
+    }
+    
+    #new-session-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+    }
+    
+    .footer {
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+    }
+    
+    .footer span {
+        display: block;
+    }
+    
+    .modal-content {
+        margin: 1rem;
+        padding: 1.5rem;
+        max-height: calc(100vh - 2rem);
+        overflow-y: auto;
+    }
+    
+    .modal-content h2 {
+        font-size: 1.25rem;
+    }
+    
+    .backend-option {
+        padding: 0.75rem;
+    }
+    
+    .modal-actions {
+        flex-direction: column;
+    }
+    
+    .modal-actions .btn {
+        width: 100%;
+    }
+    
+    .message {
+        padding: 0.75rem 1rem;
+    }
+    
+    .welcome-message {
+        padding: 1.5rem 1rem;
+    }
+    
+    .welcome-message h2 {
+        font-size: 1.25rem;
+    }
+    
+    .web-header {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .trust-toggle {
+        flex-shrink: 0;
+    }
+    
+    .inspector-panel {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .inspector-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .inspector-content {
+        padding: 0.75rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .header h1 {
+        font-size: 1rem;
+    }
+    
+    #backend-info {
+        display: none;
+    }
+    
+    .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+    }
+    
+    #send-btn {
+        padding: 0.625rem;
     }
 }
 
@@ -691,6 +843,17 @@ body {
     z-index: 999;
     display: flex;
     flex-direction: column;
+}
+
+.inspector-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 998;
 }
 
 .inspector-header {
@@ -832,5 +995,6 @@ body {
 @media (max-width: 800px) {
     .inspector-panel {
         width: 100%;
+        z-index: 1001;
     }
 }
