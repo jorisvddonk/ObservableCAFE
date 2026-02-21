@@ -78,7 +78,7 @@ export class OllamaAPI {
     return data.response || '';
   }
 
-  async *generateStream(prompt: string, abortSignal?: AbortSignal): AsyncIterable<{ token?: string; done?: boolean; finishReason?: string }> {
+  async *generateStream(prompt: string, abortSignal?: AbortSignal, systemOverride?: string): AsyncIterable<{ token?: string; done?: boolean; finishReason?: string }> {
     console.log(`[OllamaAPI] Generating with model: ${this.settings.model}, prompt length: ${prompt.length}`);
     
     const response = await fetch(`${this.settings.baseUrl}/api/generate`, {
@@ -97,7 +97,7 @@ export class OllamaAPI {
           seed: this.settings.seed,
           num_ctx: this.settings.numCtx,
         },
-        system: this.settings.system,
+        system: systemOverride !== undefined ? systemOverride : this.settings.system,
       }),
       signal: abortSignal,
     });
@@ -228,8 +228,19 @@ export class OllamaEvaluator {
       return;
     }
 
-    const userMessage = chunk.content as string;
-    console.log(`[OllamaEvaluator] Sending prompt (${userMessage.length} chars) to model ${this.api.getModel()}`);
+    const content = chunk.content as string;
+    
+    // Check if this is already a full conversation context (has full-prompt annotation)
+    const isFullPrompt = chunk.annotations['llm.full-prompt'] === true;
+    
+    let prompt: string;
+    if (isFullPrompt) {
+      prompt = content; // System prompt is ignored for full-prompt chunks in Ollama too
+    } else {
+      prompt = content; // In Ollama, the system prompt is already in settings
+    }
+
+    console.log(`[OllamaEvaluator] Sending prompt (${prompt.length} chars) to model ${this.api.getModel()}`);
 
     yield annotateChunk(
       createNullChunk('com.rxcafe.ollama-evaluator'),
@@ -239,7 +250,7 @@ export class OllamaEvaluator {
 
     try {
       let tokenCount = 0;
-      for await (const { token, done, finishReason } of this.api.generateStream(userMessage)) {
+      for await (const { token, done, finishReason } of this.api.generateStream(prompt, undefined, isFullPrompt ? '' : undefined)) {
         if (token) {
           tokenCount++;
           if (tokenCount === 1) {

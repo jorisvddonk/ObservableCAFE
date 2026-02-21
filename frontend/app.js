@@ -572,8 +572,27 @@ class RXCafeChat {
                     }
 
                     if (this.chunkElements.has(chunk.id)) {
-                        // Already tracked by id - skip
-                        console.log(`[RXCAFE] Chunk already rendered, skipping:`, chunk.id);
+                        const el = this.chunkElements.get(chunk.id);
+                        if (el) {
+                            console.log(`[RXCAFE] SSE: Updating existing chunk UI:`, chunk.id);
+                            
+                            // 1. Sync annotations (like sentiment)
+                            if (chunk.annotations['com.rxcafe.example.sentiment']) {
+                                this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
+                            }
+                            
+                            // 2. Sync text content if it changed (e.g. tool results)
+                            if (chunk.contentType === 'text' && !el.classList.contains('streaming')) {
+                                const contentEl = el.querySelector('.message-content');
+                                if (contentEl && contentEl.textContent !== chunk.content) {
+                                    // preserve sentiment meta if we update text
+                                    const sentimentMeta = contentEl.querySelector('.sentiment-meta');
+                                    contentEl.textContent = chunk.content;
+                                    if (sentimentMeta) contentEl.appendChild(sentimentMeta);
+                                }
+                            }
+                        }
+                        this.addRawChunk(chunk);
                         return;
                     }
 
@@ -582,11 +601,19 @@ class RXCafeChat {
                         console.log(`[RXCAFE] SSE user chunk claimed by pending element elId=${this._pendingUserMsg.dataset.elId}, registering id:`, chunk.id);
                         this._pendingUserMsg.dataset.chunkId = chunk.id;
                         this.chunkElements.set(chunk.id, this._pendingUserMsg);
+                        
+                        // Display sentiment if present
+                        if (chunk.annotations['com.rxcafe.example.sentiment']) {
+                            this.updateSentiment(this._pendingUserMsg, chunk.annotations['com.rxcafe.example.sentiment']);
+                        }
+
                         this._pendingUserMsg = null;
                         this.addRawChunk(chunk);
                         this.updateInspector();
                         return;
                     }
+
+
 
                     const assistantEl = (this.currentMessageEl?.dataset.pendingAssistant ? this.currentMessageEl : null) 
                                         || (this._lastAssistantEl?.dataset.pendingAssistant ? this._lastAssistantEl : null);
@@ -675,7 +702,11 @@ class RXCafeChat {
             this.addSystemChunk(chunk, chunk.content);
         } else if (chunk.contentType === 'text') {
             if (role === 'user') {
-                this.addMessage('user', chunk.content, chunk.id);
+                const el = this.addMessage('user', chunk.content, chunk.id);
+                // Handle sentiment for history chunks
+                if (chunk.annotations && chunk.annotations['com.rxcafe.example.sentiment']) {
+                    this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
+                }
             } else if (role === 'assistant') {
                 this.addMessage('assistant', chunk.content, chunk.id);
             }
@@ -1163,6 +1194,28 @@ class RXCafeChat {
         }
         this.messagesEl.appendChild(messageEl);
         this.scrollToBottom();
+        return messageEl;
+    }
+
+    updateSentiment(messageEl, sentiment) {
+        if (!messageEl || !sentiment) return;
+        console.log('[RXCAFE] updateSentiment called for element:', messageEl.dataset.elId, sentiment);
+        
+        let metaEl = messageEl.querySelector('.sentiment-meta');
+        if (!metaEl) {
+            metaEl = document.createElement('div');
+            metaEl.className = 'message-meta sentiment-meta';
+            metaEl.style.fontSize = '0.7rem';
+            metaEl.style.marginTop = '0.4rem';
+            metaEl.style.padding = '0.4rem';
+            metaEl.style.backgroundColor = 'rgba(0,0,0,0.05)';
+            metaEl.style.borderRadius = '0.25rem';
+            messageEl.querySelector('.message-content').appendChild(metaEl);
+        }
+        
+        const score = parseFloat(sentiment.score) || 0;
+        const emoji = score > 0.3 ? '😊' : (score < -0.3 ? '☹️' : '😐');
+        metaEl.textContent = `Sentiment: ${emoji} (${score.toFixed(2)}) - ${sentiment.explanation}`;
     }
 
     addImageMessage(role, chunk) {
