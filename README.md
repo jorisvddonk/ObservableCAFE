@@ -1,27 +1,35 @@
 # RXCAFE Chat
 
-A reactive chat application built with the RXCAFE architecture pattern, using Bun.js. Supports both KoboldCPP and Ollama LLM backends with security filtering for web content.
+A reactive chat application built with the RXCAFE architecture pattern, using Bun.js. Supports both KoboldCPP and Ollama LLM backends with advanced session management, background agents, and multi-modal support.
 
 ## Features
 
-- **RXCAFE Architecture**: Chunks, annotations, and evaluators following the RXCAFE spec
-- **Multiple LLM Backends**: KoboldCPP and Ollama support
-- **Telegram Bot**: Use Telegram as input/output alongside the web interface
-- **Streaming LLM responses**: Real-time token streaming
-- **Session management**: Multiple concurrent chat sessions with backend selection
-- **Web Content Fetching**: `/web URL` command with trust-based security
-- **Security Filtering**: Untrusted web content is blocked from LLM context until explicitly trusted
-- **Simple REST API**: JSON endpoints + Server-Sent Events for streaming
-- **Web frontend**: Clean, responsive chat interface with backend selector
+- **RXCAFE Architecture**: Chunks, annotations, and evaluators following the RXCAFE spec.
+- **Multiple LLM Backends**: Support for KoboldCPP and Ollama.
+- **Advanced Session Management**: 
+  - Permanent, collapsible sessions sidebar on desktop.
+  - Full-screen mobile sidebar with safe-area optimizations.
+  - Rename and delete sessions directly from the UI.
+  - Automatic session naming based on conversation context via `session.name` annotations.
+- **Agent System**: 
+  - **Interactive Agents**: Created on-demand via the UI.
+  - **Background Agents**: Persistent agents that start on server boot and can run scheduled tasks (e.g., `time-ticker`, `news-reporter`).
+  - **Custom Agent Paths**: Load agents from external directories via environment variables.
+- **Multi-modal Support**: Handle text and **binary chunks** (e.g., images) seamlessly in the chat.
+- **Telegram Bot**: Fully integrated with session switching and trust management.
+- **Streaming Responses**: Real-time token streaming for both web and Telegram.
+- **Security & Trust**: Untrusted web content is filtered from LLM context until explicitly trusted by the user.
+- **PWA Ready**: Installable as a Progressive Web App on mobile and desktop.
 
 ## Architecture
 
 This app implements the RXCAFE pattern:
 
-- **Chunks** (`lib/chunk.ts`): Immutable data units with content, producer ID, and annotations
-- **Streams** (`lib/stream.ts`): Reactive streams that process chunks through evaluators
-- **Evaluators** (`lib/kobold-api.ts`, `lib/ollama-api.ts`): LLM evaluators that transform user input into assistant responses
-- **Security** (`main.ts`): Trust-based filtering prevents untrusted web content from reaching the LLM
+- **Chunks** (`lib/chunk.ts`): Immutable data units (text, binary, or null) with producer IDs and annotations.
+- **Streams** (`lib/stream.ts`): RxJS-based reactive streams that process chunks through agent-defined pipelines.
+- **Agents** (`agents/`): Pipeline builders that subscribe to `inputStream` and emit to `outputStream`.
+- **Persistence**: All sessions, configurations, and histories are saved to an SQLite database.
+- **Security**: Trust-based filtering prevents untrusted content from reaching evaluators.
 
 ## Setup
 
@@ -48,151 +56,61 @@ This app implements the RXCAFE pattern:
 3. **(Optional) Configure Telegram Bot**:
    ```bash
    export TELEGRAM_TOKEN=your_bot_token_here
-   # Optional: for webhook mode instead of polling
-   # export TELEGRAM_WEBHOOK_URL=https://yourdomain.com/webhook/telegram
+   # Run trust command to authorize your user
+   bun start -- --trust-telegram <your_username_or_id>
    ```
-   
-   To create a bot:
-   1. Message [@BotFather](https://t.me/botfather) on Telegram
-   2. Send `/newbot` and follow instructions
-   3. Copy the token and set it as `TELEGRAM_TOKEN`
 
 4. **Run the server**:
    ```bash
-   bun run main.ts
-   # or
    bun start
    ```
 
 5. **Open the app**:
    Navigate to `http://localhost:3000`
 
-   When creating a session, you can choose between KoboldCPP and Ollama backends in the UI.
-   
-   Or start chatting via Telegram by messaging your bot!
+## Agents and External Paths
 
-## Slash Commands
+Agents are discovered automatically in the `agents/` directory. You can also load agents from external directories by setting the `RXCAFE_AGENT_SEARCH_PATHS` variable:
 
-### `/web <URL>`
-Fetch content from a web page and add it as a chunk.
-
-**Security Note**: Web content is marked as **untrusted** by default and will NOT be used as context for the LLM. You must explicitly trust the chunk before the LLM can see it.
-
-**To trust a chunk**:
-1. Click the "Trust" button on the web chunk
-2. OR right-click the chunk and select "Trust Chunk"
-
-The chunk will turn green when trusted and be included in future LLM context.
+```bash
+export RXCAFE_AGENT_SEARCH_PATHS="/path/to/my/agents:/opt/custom-agents"
+bun start
+```
 
 ## API Endpoints
 
-- `POST /api/session` - Create a new chat session (accepts `backend` and `model` in body)
-- `GET /api/models` - List available models (Ollama only)
-- `GET /api/session/:id/history` - Get session chat history
-- `POST /api/session/:id/web` - Fetch web content as untrusted chunk
-- `POST /api/session/:id/chunk/:chunkId/trust` - Toggle trust status for a chunk
-- `POST /api/chat/:sessionId` - Send a message (returns SSE stream)
-- `POST /api/chat/:sessionId/abort` - Abort ongoing generation
-- `GET /api/health` - Health check
+### Sessions
+- `GET /api/sessions` - List all active and persisted sessions.
+- `POST /api/session` - Create a new session.
+- `GET /api/session/:id/history` - Get full session history (including metadata).
+- `DELETE /api/session/:id` - Shut down and delete a session and its data.
 
-## Project Structure
+### Messaging
+- `POST /api/chat/:sessionId` - Send a message (returns token stream).
+- `GET /api/session/:sessionId/stream` - Persistent SSE stream for all session activity.
+- `POST /api/session/:id/chunk` - Add a generic chunk (text, binary, or null).
+- `POST /api/session/:id/web` - Fetch web content as untrusted chunk.
 
-```
-.
-├── main.ts                 # Main HTTP server with security filtering
-├── lib/
-│   ├── chunk.ts           # RXCAFE chunk primitives
-│   ├── stream.ts          # Reactive stream utilities
-│   ├── kobold-api.ts      # KoboldCPP API client & evaluator
-│   ├── ollama-api.ts      # Ollama API client & evaluator
-│   └── telegram.ts        # Telegram Bot API client
-├── frontend/
-│   ├── index.html         # Chat UI with trust controls
-│   ├── app.js             # Frontend logic with slash commands
-│   └── styles.css         # Styles with web chunk theming
-└── package.json
-```
+### Security
+- `POST /api/session/:id/chunk/:chunkId/trust` - Toggle trust status for a chunk.
 
 ## Environment Variables
 
-- `LLM_BACKEND` - Default LLM backend: `kobold` or `ollama` (default: `kobold`)
-- `KOBOLD_URL` - KoboldCPP server URL (default: `http://localhost:5001`)
-- `OLLAMA_URL` - Ollama server URL (default: `http://localhost:11434`)
-- `OLLAMA_MODEL` - Default Ollama model (default: `gemma3:1b`)
-- `PORT` - HTTP server port (default: `3000`)
-- `RXCAFE_TRACE` - Set to `1` to enable detailed logging of LLM context (default: disabled)
-- `TELEGRAM_TOKEN` - Telegram bot token (optional, enables Telegram bot)
-- `TELEGRAM_WEBHOOK_URL` - Webhook URL for Telegram (optional, uses polling if not set)
-
-### Tracing
-
-Set `RXCAFE_TRACE=1` to see exactly what content is being sent to the LLM:
-
-```bash
-RXCAFE_TRACE=1 bun start
-```
-
-This will log:
-- Chunk ID and producer
-- Content length
-- Full content sent to LLM
-- Annotations attached to the chunk
-
-Useful for debugging what context actually reaches the LLM after trust filtering.
+- `LLM_BACKEND` - Default LLM backend: `kobold` or `ollama`.
+- `KOBOLD_URL` - KoboldCPP server URL.
+- `OLLAMA_URL` - Ollama server URL.
+- `RXCAFE_AGENT_SEARCH_PATHS` - Colon-separated list of directories to scan for agents.
+- `PORT` - HTTP server port (default: `3000`).
+- `RXCAFE_TRACE` - Set to `1` to enable detailed logging of LLM context.
+- `TELEGRAM_TOKEN` - Telegram bot token.
+- `TRUST_DB_PATH` - Path to the SQLite trust and session database.
 
 ## Security Model
 
-RXCAFE Chat implements the security pattern from RXCAFE spec section 4.3:
-
-1. **Untrusted by Default**: Web content is automatically marked as untrusted when fetched
-2. **Stream Filtering**: The `createTrustFilter()` evaluator filters out untrusted chunks before they reach the LLM
-3. **Explicit Trust**: Users must explicitly mark content as trusted via UI
-4. **Visual Indicators**: Untrusted chunks are shown with red borders, trusted chunks with green
-
-This prevents:
-- Prompt injection via malicious web pages
-- Unintended data leakage to LLM providers
-- Accidental inclusion of unwanted content
-
-## Using Ollama
-
-1. Install Ollama: https://ollama.com
-2. Pull a model: `ollama pull llama2` (or any model you prefer)
-3. Start Ollama: `ollama serve`
-4. Run this app with `LLM_BACKEND=ollama`
-
-## Using KoboldCPP
-
-1. Download KoboldCPP: https://github.com/LostRuins/koboldcpp
-2. Start KoboldCPP with your GGUF model
-3. Run this app (KoboldCPP is the default)
-
-## Using Telegram Bot
-
-Once configured with `TELEGRAM_TOKEN`, the bot will:
-
-1. **Auto-create sessions**: Each Telegram chat gets its own RXCAFE session
-2. **Support all commands**:
-   - `/web <URL>` - Fetch web content (with trust buttons)
-   - `/help` - Show help
-   - Any other message - Chat with the LLM
-3. **Streaming responses**: Bot shows typing indicator and streams response
-4. **Trust system**: Web content shows inline buttons to trust/untrust
-
-**Commands in Telegram:**
-- `/start` - Initialize bot and show welcome message
-- `/web https://example.com` - Fetch web content
-- `/help` - Show available commands
-
-**Trusting Web Content in Telegram:**
-When you fetch web content, the bot sends it with Trust/Untrust buttons:
-- ✅ Click "Trust" to add to LLM context
-- ❌ Click "Untrust" to keep it excluded
-
-**Notes:**
-- Each Telegram chat is isolated (separate session)
-- Telegram sessions persist while the server is running
-- Web content fetched via Telegram follows the same security rules as the web UI
+1. **Untrusted by Default**: Web content and external data are marked untrusted.
+2. **Stream Filtering**: Agents or the core pipeline filter out untrusted chunks before they reach LLM evaluators.
+3. **User in the Loop**: Users must explicitly click "Trust" on chunks to include them in the LLM's memory.
+4. **Binary Safety**: Binary chunks (like images) are rendered for users but excluded from text-only LLM context unless handled by a specific multi-modal evaluator.
 
 ## License
 
