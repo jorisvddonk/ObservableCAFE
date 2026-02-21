@@ -98,6 +98,16 @@ class RXCafeChat {
         this.autoResize();
         this.hideContextMenuOnClick();
         this.loadSessionsOnStart();
+
+        window.addEventListener('hashchange', () => this.handleHashChange());
+    }
+
+    handleHashChange() {
+        const hashId = window.location.hash.substring(1);
+        if (hashId && hashId !== this.sessionId) {
+            console.log(`[RXCAFE] Hash changed to ${hashId}, switching...`);
+            this.switchToSession(hashId);
+        }
     }
     
     async loadSessionsOnStart() {
@@ -434,11 +444,19 @@ class RXCafeChat {
                     this.renderSessionList();
                 }
                 
-                // Auto-connect to most recent non-background session if no active session
+                // Auto-connect: check hash first, then most recent non-background
                 if (!this.sessionId && data.sessions.length > 0) {
-                    const recentSession = data.sessions.find(s => !s.isBackground) || data.sessions[0];
-                    if (recentSession) {
-                        await this.switchToSession(recentSession.id);
+                    const hashId = window.location.hash.substring(1);
+                    const sessionInHash = data.sessions.find(s => s.id === hashId);
+                    
+                    if (sessionInHash) {
+                        console.log(`[RXCAFE] Auto-connecting to session from URL hash: ${hashId}`);
+                        await this.switchToSession(hashId);
+                    } else {
+                        const recentSession = data.sessions.find(s => !s.isBackground) || data.sessions[0];
+                        if (recentSession) {
+                            await this.switchToSession(recentSession.id);
+                        }
                     }
                 }
             }
@@ -450,6 +468,11 @@ class RXCafeChat {
     async switchToSession(sessionId) {
         console.log(`[RXCAFE] switchToSession: ${sessionId}`);
         this.disconnectStream();
+
+        // Update URL hash
+        if (window.location.hash.substring(1) !== sessionId) {
+            window.location.hash = sessionId;
+        }
 
         try {
             console.log(`[RXCAFE] Fetching history for ${sessionId}...`);
@@ -1557,6 +1580,9 @@ class RXCafeChat {
                 if (this.sessionId === sessionId) {
                     console.log('[RXCAFE] Deleted current session, clearing UI');
                     this.sessionId = null;
+                    if (window.location.hash.substring(1) === sessionId) {
+                        history.replaceState(null, null, ' '); // Clear hash without adding to history
+                    }
                     this.messagesEl.innerHTML = '<div class="welcome-message"><h2>Session Deleted</h2><p>Please create or select another session.</p></div>';
                     this.backendInfoEl.textContent = 'No session';
                     this.messageInput.disabled = true;
