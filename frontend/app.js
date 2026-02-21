@@ -1240,9 +1240,15 @@ class RXCafeChat {
         this.sidebarMenuSessionId = sessionId;
         this.sidebarMenu.style.display = 'block';
         
-        // Position relative to the button
         const rect = e.target.getBoundingClientRect();
-        this.sidebarMenu.style.left = `${rect.left}px`;
+        const menuWidth = 140; // Default min-width + padding
+        
+        // Position horizontally: align right edge of menu with right edge of button
+        // if it would overflow the screen, otherwise just use rect.left
+        let left = rect.right - menuWidth;
+        if (left < 10) left = 10; // Keep some margin from left
+        
+        this.sidebarMenu.style.left = `${left}px`;
         this.sidebarMenu.style.top = `${rect.bottom + window.scrollY}px`;
     }
 
