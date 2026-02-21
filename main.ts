@@ -404,18 +404,45 @@ async function initTelegramBot(): Promise<void> {
       // Get or create session for this chat
       let sessionId = telegramCurrentSession.get(chatId);
       if (!sessionId) {
-        console.log(`[Telegram] Creating new session for chat ${chatId}`);
-        const session = await createSession(config);
-        telegramCurrentSession.set(chatId, session.id);
+        const defaultTelegramSessionId = 'default-telegram';
+        console.log(`[Telegram] Ensuring default session exists: ${defaultTelegramSessionId}`);
+        
+        let session = getSession(defaultTelegramSessionId);
+        
+        if (!session && sessionStore) {
+          // Check if it's in the store
+          const sessionData = await sessionStore.loadSession(defaultTelegramSessionId);
+          if (sessionData) {
+            console.log(`[Telegram] Restoring default session from store`);
+            session = await createSession(config, {
+              agentId: sessionData.agentName,
+              isBackground: sessionData.isBackground,
+              sessionId: defaultTelegramSessionId,
+              ...sessionData.config,
+              systemPrompt: sessionData.systemPrompt || undefined,
+            });
+            if (session._agentContext) await session._agentContext.loadState();
+          }
+        }
+        
+        if (!session) {
+          console.log(`[Telegram] Creating new default session`);
+          session = await createSession(config, { 
+            sessionId: defaultTelegramSessionId,
+            agentId: 'default'
+          });
+        }
+        
+        sessionId = session.id;
+        telegramCurrentSession.set(chatId, sessionId);
         
         if (!telegramAllSessions.has(chatId)) {
           telegramAllSessions.set(chatId, new Set());
         }
-        telegramAllSessions.get(chatId)!.add(session.id);
+        telegramAllSessions.get(chatId)!.add(sessionId);
         
-        sessionId = session.id;
-        console.log(`[Telegram] Created session ${sessionId}`);
-        await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Started*\n\nSession: \`${session.id}\`\nAgent: ${session.agentName}\nBackend: ${session.backend}${session.model ? ' (' + session.model + ')' : ''}\n\nType /help for available commands.`, { parseMode: 'Markdown' });
+        console.log(`[Telegram] Using session ${sessionId} for chat ${chatId}`);
+        await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Ready*\n\nUsing session: \`default-telegram\`\nAgent: ${session.agentName}\n\nType /help for available commands.`, { parseMode: 'Markdown' });
       }
       
       const session = getSession(sessionId);
