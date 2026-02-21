@@ -851,14 +851,17 @@ async function handleGetHistory(sessionId: string): Promise<Response> {
     });
   }
   
-  const textChunks = session.history.filter(c => c.contentType === 'text');
+  const historyChunks = session.history.filter(c => 
+    c.contentType === 'text' || 
+    (c.contentType === 'null' && c.annotations['session.name'])
+  );
   
   return new Response(JSON.stringify({ 
     sessionId,
     backend: session.backend,
     model: session.model,
     displayName: session.displayName,
-    chunks: textChunks
+    chunks: historyChunks
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
@@ -1428,17 +1431,12 @@ const server = serve({
       const sessionId = pathname.split('/')[3];
       const body = await request.json();
       
-      if (!body.content || typeof body.content !== 'string') {
-        return new Response(JSON.stringify({ error: 'Content required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-      
       const response = await handleAddChunk(sessionId, {
         content: body.content,
+        contentType: body.contentType,
         producer: body.producer,
-        annotations: body.annotations
+        annotations: body.annotations,
+        emit: body.emit === true
       });
       return addCors(response, corsHeaders);
     }

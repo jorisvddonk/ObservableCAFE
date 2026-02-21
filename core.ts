@@ -246,6 +246,15 @@ export async function createSession(
         const savedHistory = await sessionStore.loadHistory(id);
         session.history.length = 0;
         session.history.push(...savedHistory);
+        
+        // Scan history for the most recent display name
+        for (let i = session.history.length - 1; i >= 0; i--) {
+          const chunk = session.history[i];
+          if (chunk.annotations['session.name']) {
+            session.displayName = String(chunk.annotations['session.name']);
+            break;
+          }
+        }
       }
     },
   };
@@ -271,10 +280,11 @@ export async function createSession(
     }
   });
   
-  // Pass user messages from inputStream to outputStream for history
+  // Pass user messages and metadata from inputStream to outputStream for history
   inputStream.subscribe({
     next: (chunk) => {
-      if (chunk.contentType === 'text' && chunk.annotations['chat.role'] === 'user') {
+      if ((chunk.contentType === 'text' || chunk.contentType === 'null') && 
+          (chunk.annotations['chat.role'] === 'user' || chunk.annotations['session.name'])) {
         outputStream.next(chunk);
       }
     }
@@ -519,26 +529,34 @@ export function toggleChunkTrust(
 }
 
 export interface AddChunkOptions {
-  content: string;
+  content?: string;
+  contentType?: 'text' | 'null';
   producer?: string;
   annotations?: Record<string, any>;
   emit?: boolean;
 }
 
 export function addChunkToSession(session: Session, options: AddChunkOptions): Chunk {
-  const chunk = createTextChunk(
-    options.content,
-    options.producer || 'com.rxcafe.user',
-    options.annotations
-  );
+  const contentType = options.contentType || (options.content !== undefined ? 'text' : 'null');
+  
+  let chunk: Chunk;
+  if (contentType === 'null') {
+    chunk = createNullChunk(options.producer || 'com.rxcafe.user', options.annotations);
+  } else {
+    chunk = createTextChunk(
+      options.content || '',
+      options.producer || 'com.rxcafe.user',
+      options.annotations
+    );
+  }
   
   if (options.emit) {
     session.inputStream.next(chunk);
   } else {
     session.history.push(chunk);
     
-    if (options.annotations?.['chat.role'] === 'system') {
-      session.systemPrompt = options.content;
+    if (options.annotations?.['chat.role'] === 'system' && contentType === 'text') {
+      session.systemPrompt = options.content || null;
     }
   }
   

@@ -591,6 +591,7 @@ class RXCafeChat {
         
         // Skip purely metadata chunks (like session naming) if they don't have a role
         if (!role && chunk.annotations?.['session.name']) {
+            this.chunkElements.set(chunk.id, null); // Mark as processed
             return;
         }
 
@@ -1177,6 +1178,7 @@ class RXCafeChat {
                     </div>
                     <div class="session-item-actions">
                         ${!isCurrent ? `<button class="btn btn-primary btn-small" onclick="chat.switchToSessionFromModal('${s.id}')">Switch</button>` : ''}
+                        <button class="btn btn-secondary btn-small" onclick="chat.renameSession('${s.id}')">Rename</button>
                         <button class="btn btn-danger btn-small" onclick="chat.deleteSession('${s.id}')">Delete</button>
                     </div>
                 </div>
@@ -1187,6 +1189,44 @@ class RXCafeChat {
     async switchToSessionFromModal(sessionId) {
         await this.switchToSession(sessionId);
         this.hideSessionsModal();
+    }
+
+    async renameSession(sessionId) {
+        const session = this.knownSessions.find(s => s.id === sessionId);
+        const currentName = session ? (session.displayName || session.agentName) : '';
+        const newName = prompt('Enter new session name:', currentName);
+        
+        if (newName === null || newName === currentName) return;
+
+        try {
+            const response = await fetch(this.apiUrl(`/api/session/${sessionId}/chunk`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contentType: 'null',
+                    producer: 'com.rxcafe.user-ui',
+                    annotations: {
+                        'session.name': newName
+                    },
+                    emit: true
+                })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                // The update will come back via SSE or be handled by addRawChunk if it's the current session
+                if (session) {
+                    session.displayName = newName;
+                    this.renderSessionList();
+                    this.updateSessionSelect();
+                }
+            } else {
+                this.showError(data.message || 'Failed to rename session');
+            }
+        } catch (error) {
+            console.error('Failed to rename session:', error);
+            this.showError('Error renaming session');
+        }
     }
 
     async deleteSession(sessionId) {
