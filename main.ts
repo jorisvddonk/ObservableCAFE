@@ -810,8 +810,10 @@ async function finalizeTelegramMessage(chatId: number, text: string, messageId: 
   
   try {
     if (!messageId) {
-      // No updates were made, send final message
-      await telegramBot.sendMessage(chatId, text || 'No response');
+      // If no updates were made and there's no text, just be silent (e.g. command handled by agent)
+      if (text) {
+        await telegramBot.sendMessage(chatId, text);
+      }
     } else {
       // Update with final text (no cursor)
       await telegramBot.editMessage(chatId, messageId, text);
@@ -955,8 +957,9 @@ function ensureTelegramSubscription(chatId: number, session: Session) {
           // via interactive callbacks (prevents doubles).
           // We check if the active callbacks belong to THIS specific Telegram chat.
           const isActiveTurnForUs = (session.callbacks as any)?.telegramChatId === chatId;
+          const isStreamingProducer = chunk.producer === 'com.rxcafe.assistant';
           
-          if (isAssistant && !isActiveTurnForUs) {
+          if (isAssistant && (!isActiveTurnForUs || !isStreamingProducer)) {
               await telegramBot.sendMessage(chatId, chunk.content as string);
           }
       }
