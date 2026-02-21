@@ -695,6 +695,8 @@ async function handleTelegramMessage(chatId: number, session: Session, message: 
   let fullResponse = '';
   let messageId: number | null = null;
   let tokenCount = 0;
+  let lastUpdateResponse = '';
+  let updateInProgress = false;
   
   try {
     console.log(`[Telegram] Starting LLM evaluation...`);
@@ -704,16 +706,28 @@ async function handleTelegramMessage(chatId: number, session: Session, message: 
         tokenCount++;
         fullResponse += token;
         
-        // Update message every 20 characters to avoid rate limits
-        if (fullResponse.length % 20 === 0 && fullResponse.length > 0) {
+        // Update message every 20 characters, but only if not already updating
+        // This prevents the race condition that causes duplicate messages
+        if (fullResponse.length - lastUpdateResponse.length >= 20 && !updateInProgress) {
+          updateInProgress = true;
           updateTelegramMessage(chatId, fullResponse, messageId).then(id => {
-            if (id && !messageId) messageId = id;
+            if (id) messageId = id;
+            lastUpdateResponse = fullResponse;
+            updateInProgress = false;
+          }).catch(() => {
+            updateInProgress = false;
           });
         }
       },
-      onFinish: () => {
+      onFinish: async () => {
         console.log(`[Telegram] LLM evaluation complete. Tokens: ${tokenCount}, Response length: ${fullResponse.length}`);
         
+        // Wait for any pending update to finish to ensure we have the correct messageId
+        const start = Date.now();
+        while (updateInProgress && Date.now() - start < 5000) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+
         // Final message update
         finalizeTelegramMessage(chatId, fullResponse, messageId, statusMessage?.message_id);
 
@@ -725,7 +739,24 @@ async function handleTelegramMessage(chatId: number, session: Session, message: 
       },
       onError: (error: Error) => {
         console.error('[Telegram] LLM error:', error);
-        telegramBot!.sendMessage(chatId, `❌ Error: ${error.message}`);
+        
+        // Wait for any pending update to finish
+        const waitAndSend = async () => {
+          const start = Date.now();
+          while (updateInProgress && Date.now() - start < 5000) {
+            await new Promise(r => setTimeout(r, 100));
+          }
+          await telegramBot!.sendMessage(chatId, `❌ Error: ${error.message}`);
+          
+          // Delete status message if it exists
+          if (statusMessageId) {
+            try {
+              await telegramBot!.deleteMessage(chatId, statusMessageId);
+            } catch { /* ignore */ }
+          }
+        };
+
+        waitAndSend();
         
         // Clear callbacks
         if (session.callbacks === callbacks) {
