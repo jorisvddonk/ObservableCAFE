@@ -222,8 +222,24 @@ export async function createSession(
     get callbacks() { return session.callbacks; },
     set callbacks(val) { session.callbacks = val; },
     
-    createEvaluator: (backend: LLMBackend, model?: string, params?: LLMParams): AgentEvaluator => {
-      const evaluator = createEvaluator(backend, config, model, { ...options?.llmParams, ...params });
+    createEvaluator: (backendOrParams?: LLMBackend | LLMParams, model?: string, params?: LLMParams): AgentEvaluator => {
+      let b: LLMBackend;
+      let m: string | undefined;
+      let p: LLMParams | undefined;
+
+      if (typeof backendOrParams === 'object') {
+        // One-liner: session.createEvaluator({ temperature: 0 })
+        b = sessionConfig.backend || config.backend;
+        m = sessionConfig.model;
+        p = { ...sessionConfig.llmParams, ...backendOrParams };
+      } else {
+        // Standard: session.createEvaluator('ollama', 'llama3', { ... })
+        b = backendOrParams || sessionConfig.backend || config.backend;
+        m = model || sessionConfig.model;
+        p = { ...sessionConfig.llmParams, ...params };
+      }
+
+      const evaluator = createEvaluator(b, config, m, p);
       return {
         evaluateChunk: evaluator.evaluateChunk,
         abort: evaluator.abort,
