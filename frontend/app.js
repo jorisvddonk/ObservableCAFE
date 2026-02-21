@@ -584,12 +584,12 @@ class RXCafeChat {
                             
                             // 2. Sync text content if it changed (e.g. tool results)
                             if (chunk.contentType === 'text' && !el.classList.contains('streaming')) {
+                                this.updateMessageContent(el, chunk.content, chunk.annotations);
+                                
+                                // Re-append sentiment if it was there
                                 const contentEl = el.querySelector('.message-content');
-                                if (contentEl && contentEl.textContent !== chunk.content) {
-                                    // preserve sentiment meta if we update text
-                                    const sentimentMeta = contentEl.querySelector('.sentiment-meta');
-                                    contentEl.textContent = chunk.content;
-                                    if (sentimentMeta) contentEl.appendChild(sentimentMeta);
+                                if (chunk.annotations['com.rxcafe.example.sentiment']) {
+                                    this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                                 }
                             }
                         }
@@ -623,7 +623,7 @@ class RXCafeChat {
                         console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
                         assistantEl.dataset.chunkId = chunk.id;
                         this.chunkElements.set(chunk.id, assistantEl);
-                        this.updateMessageContent(assistantEl, chunk.content);
+                        this.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
                         delete assistantEl.dataset.pendingAssistant;
                         if (assistantEl === this._lastAssistantEl) this._lastAssistantEl = null;
                         this.addRawChunk(chunk);
@@ -704,7 +704,7 @@ class RXCafeChat {
             this.addSystemChunk(chunk, chunk.content);
         } else if (chunk.contentType === 'text') {
             if (role === 'user') {
-                const el = this.addMessage('user', chunk.content, chunk.id);
+                const el = this.addMessage('user', chunk.content, chunk.id, chunk.annotations);
                 
                 // Show Telegram origin
                 if (isTelegram) {
@@ -716,7 +716,7 @@ class RXCafeChat {
                     this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                 }
             } else if (role === 'assistant') {
-                this.addMessage('assistant', chunk.content, chunk.id);
+                this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
             }
         }
     }
@@ -1219,8 +1219,8 @@ class RXCafeChat {
         });
     }
     
-    addMessage(role, content, chunkId = null) {
-        const messageEl = this.createMessageElement(role, content);
+    addMessage(role, content, chunkId = null, annotations = {}) {
+        const messageEl = this.createMessageElement(role, content, annotations);
         console.log(`[RXCAFE] addMessage elId=${messageEl.dataset.elId} role=${role} chunkId=${chunkId}`);
         if (chunkId) {
             messageEl.dataset.chunkId = chunkId;
@@ -1370,7 +1370,7 @@ class RXCafeChat {
         this.scrollToBottom();
     }
     
-    createMessageElement(role, content) {
+    createMessageElement(role, content, annotations = {}) {
         const messageEl = document.createElement('div');
         this._elCounter++;
         messageEl.dataset.elId = this._elCounter;
@@ -1378,16 +1378,28 @@ class RXCafeChat {
         
         const contentEl = document.createElement('div');
         contentEl.className = 'message-content';
-        contentEl.textContent = content;
         
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'message-body';
+        this.renderMessageBody(bodyEl, content, annotations);
+        
+        contentEl.appendChild(bodyEl);
         messageEl.appendChild(contentEl);
         return messageEl;
     }
+
+    renderMessageBody(el, content, annotations) {
+        if (annotations['parsers.markdown.enabled'] && typeof marked !== 'undefined') {
+            el.innerHTML = marked.parse(content);
+        } else {
+            el.textContent = content;
+        }
+    }
     
-    updateMessageContent(messageEl, content) {
-        const contentEl = messageEl.querySelector('.message-content');
-        if (contentEl) {
-            contentEl.textContent = content;
+    updateMessageContent(messageEl, content, annotations = {}) {
+        const bodyEl = messageEl.querySelector('.message-body');
+        if (bodyEl) {
+            this.renderMessageBody(bodyEl, content, annotations);
             this.scrollToBottom();
         }
     }

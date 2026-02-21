@@ -34,7 +34,11 @@ export const rssSummarizerAgent: AgentDefinition = {
         session.outputStream.next(createTextChunk(
           `### Summary for ${url}\n\n${summary}`,
           'com.rxcafe.rss-agent',
-          { 'chat.role': 'assistant', 'rss.source': url }
+          { 
+            'chat.role': 'assistant', 
+            'rss.source': url,
+            'parsers.markdown.enabled': true
+          }
         ));
       }
       
