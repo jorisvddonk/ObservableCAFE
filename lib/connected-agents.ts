@@ -1,6 +1,6 @@
 import { Chunk, createNullChunk } from './chunk.js';
 import { getSession } from '../core.js';
-import { TrustDatabase } from './trust.js';
+import { Database } from './trust.js';
 
 export interface ConnectedAgent {
   id: string;
@@ -21,9 +21,9 @@ export class ConnectedAgentStore {
   private agents = new Map<string, ConnectedAgent>();
   private apiKeyToAgentId = new Map<string, string>();
   private agentSessions = new Map<string, Set<AgentSession>>();
-  private trustDb: TrustDatabase | null = null;
+  private trustDb: Database | null = null;
 
-  setTrustDatabase(db: TrustDatabase): void {
+  setTrustDatabase(db: Database): void {
     this.trustDb = db;
     this.loadFromDatabase();
   }

@@ -3,11 +3,11 @@
  * SQLite-based client authentication using bun:sqlite
  */
 
-import { Database } from 'bun:sqlite';
+import { Database as Sqlite } from 'bun:sqlite';
 import { randomBytes, createHash } from 'crypto';
 import { join } from 'path';
 
-export interface TrustDBConfig {
+export interface DatabaseConfig {
   dbPath: string;
 }
 
@@ -20,17 +20,17 @@ export interface TrustedClient {
   useCount: number;
 }
 
-export class TrustDatabase {
-  private db: Database;
+export class Database {
+  private db: Sqlite;
   private dbPath: string;
 
   constructor(dbPath: string = './rxcafe-trust.db') {
     this.dbPath = dbPath;
-    this.db = new Database(dbPath);
+    this.db = new Sqlite(dbPath);
     this.initializeSchema();
   }
   
-  getDatabase(): Database {
+  getDatabase(): Sqlite {
     return this.db;
   }
   
@@ -190,8 +190,8 @@ export class TrustDatabase {
    * Returns the token (which cannot be retrieved later)
    */
   addClient(description?: string): string {
-    const token = TrustDatabase.generateToken();
-    const tokenHash = TrustDatabase.hashToken(token);
+    const token = Database.generateToken();
+    const tokenHash = Database.hashToken(token);
     const now = Date.now();
 
     const stmt = this.db.prepare(`
@@ -209,7 +209,7 @@ export class TrustDatabase {
    * Check if a token is trusted and update usage stats
    */
   verifyToken(token: string): boolean {
-    const tokenHash = TrustDatabase.hashToken(token);
+    const tokenHash = Database.hashToken(token);
     const now = Date.now();
 
     // First check if token exists
@@ -239,7 +239,7 @@ export class TrustDatabase {
    * Check if a token is trusted without updating stats (for checks only)
    */
   isTokenTrusted(token: string): boolean {
-    const tokenHash = TrustDatabase.hashToken(token);
+    const tokenHash = Database.hashToken(token);
 
     const stmt = this.db.prepare(`
       SELECT id FROM trusted_clients WHERE token_hash = ?
@@ -302,7 +302,7 @@ export class TrustDatabase {
    * Remove a trusted client by token
    */
   removeClientByToken(token: string): boolean {
-    const tokenHash = TrustDatabase.hashToken(token);
+    const tokenHash = Database.hashToken(token);
     const stmt = this.db.prepare(`
       DELETE FROM trusted_clients WHERE token_hash = ?
     `);
@@ -513,7 +513,7 @@ export class TrustDatabase {
    * Add a connected agent
    */
   addConnectedAgent(id: string, apiKey: string, name: string, description?: string): void {
-    const apiKeyHash = TrustDatabase.hashToken(apiKey);
+    const apiKeyHash = Database.hashToken(apiKey);
     const now = Date.now();
 
     const stmt = this.db.prepare(`
@@ -562,7 +562,7 @@ export class TrustDatabase {
    * Get connected agent by API key
    */
   getConnectedAgentByApiKey(apiKey: string): { id: string; name: string; description?: string; createdAt: number } | undefined {
-    const apiKeyHash = TrustDatabase.hashToken(apiKey);
+    const apiKeyHash = Database.hashToken(apiKey);
     const stmt = this.db.prepare(`
       SELECT id, name, description, created_at as createdAt
       FROM connected_agents WHERE api_key_hash = ?

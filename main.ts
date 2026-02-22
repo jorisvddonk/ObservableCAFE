@@ -52,7 +52,7 @@ import {
   type CreateSessionOptions
 } from './core.js';
 import { TelegramBot, TelegramUser, TelegramConfig } from './lib/telegram.js';
-import { TrustDatabase, extractClientToken, maskToken } from './lib/trust.js';
+import { Database, extractClientToken, maskToken } from './lib/trust.js';
 import { SessionStore } from './lib/session-store.js';
 import type { LLMParams } from './lib/agent.js';
 import { Subscription } from './lib/stream.js';
@@ -69,7 +69,7 @@ const args = process.argv.slice(2);
 const trustIndex = args.indexOf('--trust');
 if (trustIndex !== -1 && args[trustIndex + 1]) {
   const token = args[trustIndex + 1];
-  const db = new TrustDatabase();
+  const db = new Database();
   
   if (db.isTokenTrusted(token)) {
     console.log('❌ This token is already trusted');
@@ -93,8 +93,8 @@ if (trustIndex !== -1 && args[trustIndex + 1]) {
 
 // Handle --generate-token command
 if (args.includes('--generate-token')) {
-  const db = new TrustDatabase();
-  const token = TrustDatabase.generateToken();
+  const db = new Database();
+  const token = Database.generateToken();
   const description = args[args.indexOf('--generate-token') + 1] && !args[args.indexOf('--generate-token') + 1].startsWith('--')
     ? args[args.indexOf('--generate-token') + 1]
     : undefined;
@@ -115,7 +115,7 @@ if (args.includes('--generate-token')) {
 
 // Handle --list-clients command
 if (args.includes('--list-clients')) {
-  const db = new TrustDatabase();
+  const db = new Database();
   const clients = db.listClients();
   
   if (clients.length === 0) {
@@ -151,7 +151,7 @@ if (revokeIndex !== -1 && args[revokeIndex + 1]) {
     process.exit(1);
   }
   
-  const db = new TrustDatabase();
+  const db = new Database();
   const success = db.removeClient(id);
   
   if (success) {
@@ -172,7 +172,7 @@ if (trustTelegramIndex !== -1 && args[trustTelegramIndex + 1]) {
     ? args[trustTelegramIndex + 2] 
     : undefined;
   
-  const db = new TrustDatabase();
+  const db = new Database();
   
   // Check if it's a user ID (numeric) or username
   const userId = parseInt(identifier);
@@ -198,7 +198,7 @@ const untrustTelegramIndex = args.indexOf('--untrust-telegram');
 if (untrustTelegramIndex !== -1 && args[untrustTelegramIndex + 1]) {
   const identifier = args[untrustTelegramIndex + 1];
   
-  const db = new TrustDatabase();
+  const db = new Database();
   
   // Check if it's a user ID (numeric) or username
   const userId = parseInt(identifier);
@@ -226,7 +226,7 @@ if (untrustTelegramIndex !== -1 && args[untrustTelegramIndex + 1]) {
 
 // Handle --list-telegram-users command
 if (args.includes('--list-telegram-users')) {
-  const db = new TrustDatabase();
+  const db = new Database();
   const users = db.listTrustedTelegramUsers();
   
   if (users.length === 0) {
@@ -263,7 +263,7 @@ const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const TRUST_DB_PATH = process.env.TRUST_DB_PATH || './rxcafe-trust.db';
 
 // Initialize trust database
-const trustDb = new TrustDatabase(TRUST_DB_PATH);
+const trustDb = new Database(TRUST_DB_PATH);
 
 // Initialize connected agents store
 connectedAgentStore.setTrustDatabase(trustDb);
