@@ -48,9 +48,21 @@ export class Database {
         description TEXT,
         created_at INTEGER NOT NULL,
         last_used_at INTEGER,
-        use_count INTEGER DEFAULT 0
+        use_count INTEGER DEFAULT 0,
+        is_admin INTEGER DEFAULT 0
       )
     `);
+    
+    // Migration: Add is_admin column if it doesn't exist
+    const adminColumnCheck = this.db.prepare(`
+      SELECT * FROM pragma_table_info('trusted_clients') WHERE name='is_admin'
+    `);
+    const adminColumn = adminColumnCheck.all();
+    adminColumnCheck.finalize();
+    
+    if (adminColumn.length === 0) {
+      this.db.run(`ALTER TABLE trusted_clients ADD COLUMN is_admin INTEGER DEFAULT 0`);
+    }
 
     // Create index on token_hash for faster lookups
     this.db.run(`
@@ -254,22 +266,23 @@ export class Database {
   /**
    * Get all trusted clients (without tokens, only metadata)
    */
-  listClients(): Omit<TrustedClient, 'token'>[] {
+  listClients(): Array<Omit<TrustedClient, 'token'> & { isAdmin: boolean }> {
     const stmt = this.db.prepare(`
       SELECT 
         id,
         description,
         created_at as createdAt,
         last_used_at as lastUsedAt,
-        use_count as useCount
+        use_count as useCount,
+        is_admin as isAdmin
       FROM trusted_clients
       ORDER BY created_at DESC
     `);
 
-    const results = stmt.all() as Omit<TrustedClient, 'token'>[];
+    const results = stmt.all() as Array<Omit<TrustedClient, 'token'> & { isAdmin: number }>;
     stmt.finalize();
 
-    return results;
+    return results.map(r => ({ ...r, isAdmin: !!r.isAdmin }));
   }
 
   /**
@@ -339,6 +352,100 @@ export class Database {
     stmt.finalize();
 
     return result.count;
+  }
+
+  /**
+   * Set admin status for a client
+   */
+  setAdminStatus(id: number, isAdmin: boolean): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE trusted_clients SET is_admin = ? WHERE id = ?
+    `);
+    const result = stmt.run(isAdmin ? 1 : 0, id);
+    stmt.finalize();
+    return result.changes > 0;
+  }
+
+  /**
+   * Check if a token has admin privileges
+   */
+  isAdminToken(token: string): boolean {
+    const tokenHash = Database.hashToken(token);
+    const stmt = this.db.prepare(`
+      SELECT id FROM trusted_clients WHERE token_hash = ? AND is_admin = 1
+    `);
+    const result = stmt.get(tokenHash) as { id: number } | undefined;
+    stmt.finalize();
+    return !!result;
+  }
+
+  /**
+   * Get client ID by token (for admin verification)
+   */
+  getClientIdByToken(token: string): number | null {
+    const tokenHash = Database.hashToken(token);
+    const stmt = this.db.prepare(`
+      SELECT id FROM trusted_clients WHERE token_hash = ?
+    `);
+    const result = stmt.get(tokenHash) as { id: number } | undefined;
+    stmt.finalize();
+    return result?.id ?? null;
+  }
+
+  /**
+   * Get client by ID
+   */
+  getClientById(id: number): { id: number; description?: string; isAdmin: boolean; createdAt: number; lastUsedAt?: number; useCount: number } | null {
+    const stmt = this.db.prepare(`
+      SELECT 
+        id,
+        description,
+        is_admin as isAdmin,
+        created_at as createdAt,
+        last_used_at as lastUsedAt,
+        use_count as useCount
+      FROM trusted_clients WHERE id = ?
+    `);
+    const result = stmt.get(id) as any;
+    stmt.finalize();
+    return result ? { ...result, isAdmin: !!result.isAdmin } : null;
+  }
+
+  /**
+   * List all admin clients
+   */
+  listAdminClients(): Array<{ id: number; description?: string; createdAt: number }> {
+    const stmt = this.db.prepare(`
+      SELECT 
+        id,
+        description,
+        created_at as createdAt
+      FROM trusted_clients
+      WHERE is_admin = 1
+      ORDER BY created_at DESC
+    `);
+    const results = stmt.all() as Array<{ id: number; description?: string; createdAt: number }>;
+    stmt.finalize();
+    return results;
+  }
+
+  /**
+   * Add a client with admin status
+   */
+  addClientWithAdmin(description?: string, isAdmin: boolean = false): string {
+    const token = Database.generateToken();
+    const tokenHash = Database.hashToken(token);
+    const now = Date.now();
+
+    const stmt = this.db.prepare(`
+      INSERT INTO trusted_clients (token, token_hash, description, created_at, is_admin)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(token, tokenHash, description || null, now, isAdmin ? 1 : 0);
+    stmt.finalize();
+
+    return token;
   }
 
   // =============================================================================

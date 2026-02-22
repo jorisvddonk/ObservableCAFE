@@ -94,12 +94,12 @@ if (trustIndex !== -1 && args[trustIndex + 1]) {
 // Handle --generate-token command
 if (args.includes('--generate-token')) {
   const db = new Database();
-  const token = Database.generateToken();
+  const isAdmin = args.includes('--admin');
   const description = args[args.indexOf('--generate-token') + 1] && !args[args.indexOf('--generate-token') + 1].startsWith('--')
     ? args[args.indexOf('--generate-token') + 1]
     : undefined;
   
-  db.addClient(description);
+  const token = db.addClientWithAdmin(description, isAdmin);
   console.log('✅ New client token generated and trusted');
   console.log(`Token: ${token}`);
   console.log('');
@@ -108,6 +108,9 @@ if (args.includes('--generate-token')) {
   console.log('  - Or ?token=<token> query parameter');
   if (description) {
     console.log(`Description: ${description}`);
+  }
+  if (isAdmin) {
+    console.log('Admin: YES - This token has administrative privileges');
   }
   db.close();
   process.exit(0);
@@ -123,10 +126,11 @@ if (args.includes('--list-clients')) {
   } else {
     console.log(`Trusted clients (${clients.length}):`);
     console.log('');
-    console.log('ID  | Description          | Created            | Last Used          | Uses');
-    console.log('----|----------------------|--------------------|--------------------|------');
+    console.log('ID  | Admin | Description          | Created            | Last Used          | Uses');
+    console.log('----|-------|----------------------|--------------------|--------------------|------');
     
     for (const client of clients) {
+      const admin = client.isAdmin ? '  ✓  ' : '     ';
       const desc = (client.description || '').slice(0, 20).padEnd(20);
       const created = new Date(client.createdAt).toLocaleString().slice(0, 18).padEnd(18);
       const lastUsed = client.lastUsedAt 
@@ -134,12 +138,46 @@ if (args.includes('--list-clients')) {
         : 'Never'.padEnd(18);
       const uses = client.useCount.toString().padStart(5);
       
-      console.log(`${client.id.toString().padStart(3)} | ${desc} | ${created} | ${lastUsed} | ${uses}`);
+      console.log(`${client.id.toString().padStart(3)} | ${admin} | ${desc} | ${created} | ${lastUsed} | ${uses}`);
     }
   }
   
   db.close();
   process.exit(0);
+}
+
+// Handle --token-admin command
+const tokenAdminIndex = args.indexOf('--token-admin');
+if (tokenAdminIndex !== -1 && args[tokenAdminIndex + 1]) {
+  const id = parseInt(args[tokenAdminIndex + 1]);
+  if (isNaN(id)) {
+    console.log('❌ Invalid client ID');
+    process.exit(1);
+  }
+  
+  const db = new Database();
+  const client = db.getClientById(id);
+  
+  if (!client) {
+    console.log(`❌ Client ${id} not found`);
+    db.close();
+    process.exit(1);
+  }
+  
+  const newAdminStatus = !client.isAdmin;
+  const success = db.setAdminStatus(id, newAdminStatus);
+  
+  if (success) {
+    console.log(`✅ Client ${id} admin status: ${newAdminStatus ? 'ENABLED' : 'DISABLED'}`);
+    if (client.description) {
+      console.log(`Description: ${client.description}`);
+    }
+  } else {
+    console.log(`❌ Failed to update client ${id}`);
+  }
+  
+  db.close();
+  process.exit(success ? 0 : 1);
 }
 
 // Handle --revoke command
@@ -352,6 +390,32 @@ function verifyClient(request: Request): { trusted: boolean; token: string | nul
   
   const isTrusted = trustDb.verifyToken(token);
   return { trusted: isTrusted, token };
+}
+
+function verifyAdmin(request: Request): { isAdmin: boolean; token: string | null; clientId: number | null } {
+  const token = extractClientToken(request);
+  
+  if (!token) {
+    return { isAdmin: false, token: null, clientId: null };
+  }
+  
+  const clientId = trustDb.getClientIdByToken(token);
+  if (!clientId) {
+    return { isAdmin: false, token, clientId: null };
+  }
+  
+  const isAdmin = trustDb.isAdminToken(token);
+  return { isAdmin, token, clientId };
+}
+
+function createForbiddenResponse(): Response {
+  return new Response(JSON.stringify({
+    error: 'Forbidden',
+    message: 'Admin privileges required for this operation.'
+  }), {
+    status: 403,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
 
 // =============================================================================
@@ -1298,7 +1362,8 @@ async function handleToggleTrust(sessionId: string, chunkId: string, trusted: bo
 
 async function handleChatStream(
   sessionId: string, 
-  message: string
+  message: string,
+  isAdmin: boolean = false
 ): Promise<Response> {
   const session = getSession(sessionId);
   
@@ -1357,7 +1422,7 @@ async function handleChatStream(
           }
         },
         config,
-        { 'client.type': 'web' }
+        { 'client.type': 'web', 'admin.authorized': isAdmin }
       ).catch(error => {
         controller.enqueue(`data: ${JSON.stringify({ 
           type: 'error',
@@ -1778,7 +1843,8 @@ const server = serve({
         });
       }
       
-      const response = await handleChatStream(sessionId, message);
+      const { isAdmin } = verifyAdmin(request);
+      const response = await handleChatStream(sessionId, message, isAdmin);
       return addCors(response, corsHeaders);
     }
     
@@ -1856,6 +1922,16 @@ const server = serve({
     if (pathname.match(/^\/api\/session\/[^/]+\/agent-chunk$/) && request.method === 'POST') {
       const sessionId = pathname.split('/')[3];
       const response = await handleAgentProduceChunk(request, sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    // System agent routes (admin-only)
+    if (pathname === '/api/system/command' && request.method === 'POST') {
+      const { isAdmin, token } = verifyAdmin(request);
+      if (!isAdmin) {
+        return addCors(createForbiddenResponse(), corsHeaders);
+      }
+      const response = await handleSystemCommand(request);
       return addCors(response, corsHeaders);
     }
     
@@ -2156,6 +2232,73 @@ async function handleAgentProduceChunk(request: Request, sessionId: string): Pro
     chunk
   }), {
     headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+async function handleSystemCommand(request: Request): Promise<Response> {
+  const systemSession = getSession('system');
+  
+  if (!systemSession) {
+    return new Response(JSON.stringify({ error: 'System agent not running' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const body = await request.json().catch(() => ({}));
+  const command = body.command;
+  
+  if (!command || typeof command !== 'string') {
+    return new Response(JSON.stringify({ error: 'Command required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  return new Promise((resolve) => {
+    let responseText = '';
+    let responded = false;
+    
+    const timeout = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        sub.unsubscribe();
+        resolve(new Response(JSON.stringify({ error: 'Command timeout' }), {
+          status: 504,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+    }, 10000);
+    
+    const sub = systemSession.outputStream.subscribe({
+      next: (chunk: Chunk) => {
+        if (chunk.annotations['system.response'] || chunk.annotations['system.error']) {
+          responseText = chunk.content as string;
+        }
+        
+        if (chunk.annotations['system.response'] || chunk.annotations['system.error']) {
+          if (!responded) {
+            responded = true;
+            clearTimeout(timeout);
+            sub.unsubscribe();
+            resolve(new Response(JSON.stringify({
+              success: !chunk.annotations['system.error'],
+              response: responseText
+            }), {
+              headers: { 'Content-Type': 'application/json' }
+            }));
+          }
+        }
+      }
+    });
+    
+    const commandChunk = createTextChunk(command, 'com.rxcafe.api', {
+      'chat.role': 'user',
+      'client.type': 'api',
+      'admin.authorized': true
+    });
+    
+    systemSession.inputStream.next(commandChunk);
   });
 }
 
