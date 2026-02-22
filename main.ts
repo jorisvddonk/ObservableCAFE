@@ -1419,32 +1419,40 @@ async function handleChatStream(
         message,
         {
           onToken: (token: string) => {
-            controller.enqueue(`data: ${JSON.stringify({
-              type: 'token',
-              token: token
-            })}\n\n`);
+            try {
+              controller.enqueue(`data: ${JSON.stringify({
+                type: 'token',
+                token: token
+              })}\n\n`);
+            } catch { /* controller closed */ }
           },
           onFinish: () => {
-            controller.enqueue(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
-            controller.enqueue(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-            controller.close();
+            try {
+              controller.enqueue(`data: ${JSON.stringify({ type: 'finish' })}\n\n`);
+              controller.enqueue(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+              controller.close();
+            } catch { /* controller closed */ }
           },
           onError: (error: Error) => {
-            controller.enqueue(`data: ${JSON.stringify({ 
-              type: 'error',
-              error: error.message 
-            })}\n\n`);
-            controller.close();
+            try {
+              controller.enqueue(`data: ${JSON.stringify({ 
+                type: 'error',
+                error: error.message 
+              })}\n\n`);
+              controller.close();
+            } catch { /* controller closed */ }
           }
         },
         config,
         { 'client.type': 'web', 'admin.authorized': isAdmin }
       ).catch(error => {
-        controller.enqueue(`data: ${JSON.stringify({ 
-          type: 'error',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        })}\n\n`);
-        controller.close();
+        try {
+          controller.enqueue(`data: ${JSON.stringify({ 
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })}\n\n`);
+          controller.close();
+        } catch { /* controller closed */ }
       });
       
       // User chunk confirmation sent via general SSE stream
