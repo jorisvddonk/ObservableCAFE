@@ -614,12 +614,12 @@ class RXCafeChat {
                         return;
                     }
 
-
+                    const isFromConnectedAgent = chunk.producer?.startsWith('com.observablecafe.connected-agent');
 
                     const assistantEl = (this.currentMessageEl?.dataset.pendingAssistant ? this.currentMessageEl : null) 
                                         || (this._lastAssistantEl?.dataset.pendingAssistant ? this._lastAssistantEl : null);
 
-                    if (role === 'assistant' && assistantEl && chunk.contentType === 'text') {
+                    if (role === 'assistant' && assistantEl && chunk.contentType === 'text' && !isFromConnectedAgent) {
                         console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
                         assistantEl.dataset.chunkId = chunk.id;
                         this.chunkElements.set(chunk.id, assistantEl);
