@@ -894,9 +894,10 @@ class RXCafeChat {
             
             // Remove loading indicator only if we haven't received content from SSE yet
             const contentEl = this.currentMessageEl.querySelector('.message-content');
-            if (contentEl && contentEl.querySelector('.loading-indicator')) {
+            const loadingEl = contentEl?.querySelector('.loading-indicator');
+            if (loadingEl) {
                 console.log('[RXCAFE] Removing loading indicator');
-                contentEl.innerHTML = '';
+                loadingEl.remove();
             }
             
             while (true) {
