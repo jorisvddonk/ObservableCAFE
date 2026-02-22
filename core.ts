@@ -284,14 +284,14 @@ export async function createSession(
         if (session.runtimeConfig.systemPrompt) {
           session.systemPrompt = session.runtimeConfig.systemPrompt;
         }
-        if (session.runtimeConfig.llmParams) {
-          session.llmEvaluator = createEvaluator(
-            session.backend,
-            config,
-            session.model,
-            session.runtimeConfig.llmParams
-          );
-        }
+        
+        // Always recreate evaluator on load
+        session.llmEvaluator = createEvaluator(
+          session.backend,
+          config,
+          session.model,
+          session.runtimeConfig.llmParams
+        );
       }
     },
   };
@@ -321,14 +321,14 @@ export async function createSession(
         if (session.runtimeConfig.systemPrompt) {
           session.systemPrompt = session.runtimeConfig.systemPrompt;
         }
-        if (session.runtimeConfig.llmParams) {
-          session.llmEvaluator = createEvaluator(
-            session.backend,
-            config,
-            session.model,
-            session.runtimeConfig.llmParams
-          );
-        }
+        
+        // Recreate evaluator whenever backend, model, or llmParams changes
+        session.llmEvaluator = createEvaluator(
+          session.backend,
+          config,
+          session.model,
+          session.runtimeConfig.llmParams
+        );
       }
       
       const existingIndex = session.history.findIndex(c => c.id === chunk.id);

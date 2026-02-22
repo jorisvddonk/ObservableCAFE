@@ -1365,7 +1365,9 @@ async function handleAddChunk(sessionId: string, options: AddChunkOptions): Prom
     });
   }
   
-  const chunk = addChunkToSession(session, options);
+  // Runtime config chunks should be emitted to inputStream so they're processed
+  const isRuntimeConfig = options.contentType === 'null' && options.annotations?.['config.type'] === 'runtime';
+  const chunk = addChunkToSession(session, { ...options, emit: isRuntimeConfig });
   
   return new Response(JSON.stringify({
     success: true,

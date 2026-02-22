@@ -29,8 +29,6 @@ export const newsReporterAgent: AgentDefinition = {
   ],
   
   async initialize(session: AgentSessionContext) {
-    const evaluator = session.createEvaluator({ temperature: 0.7, maxTokens: 200 });
-    
     await session.loadState();
     
     const sub = session.inputStream.pipe(
@@ -41,7 +39,8 @@ export const newsReporterAgent: AgentDefinition = {
       }),
       mergeMap((chunk: Chunk) => {
         if (chunk.annotations['chat.role'] !== 'user') return [chunk];
-        return processWithEvaluator(chunk, evaluator, session);
+        // Create fresh evaluator per message to pick up runtime config changes
+        return processWithEvaluator(chunk, session.createEvaluator({ temperature: 0.7, maxTokens: 200 }), session);
       }),
       catchError((error: Error) => {
         session.errorStream.next(error);

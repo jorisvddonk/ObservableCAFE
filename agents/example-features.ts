@@ -28,16 +28,14 @@ export const exampleFeaturesAgent: AgentDefinition = {
   ],
   
   initialize(session: AgentSessionContext) {
-    const chatEvaluator = session.createEvaluator();
-    
     const sub = session.inputStream.pipe(
       filter((chunk: Chunk) => chunk.contentType === 'text' && chunk.annotations['chat.role'] === 'user'),
       
       // Step 1: Add sentiment metadata (encapsulated one-liner)
       mergeMap(analyzeSentiment(session)),
       
-      // Step 2: Generate assistant response
-      mergeMap(chunk => processWithEvaluator(chunk, chatEvaluator, session)),
+      // Step 2: Generate assistant response (fresh evaluator per message)
+      mergeMap(chunk => processWithEvaluator(chunk, session.createEvaluator(), session)),
       
       catchError((error: Error) => {
         session.errorStream.next(error);

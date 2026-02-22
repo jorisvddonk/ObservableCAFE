@@ -40,8 +40,6 @@ export const defaultAgent: AgentDefinition = {
   ],
   
   initialize(session: AgentSessionContext) {
-    const evaluator = session.createEvaluator();
-    
     const sub = session.inputStream.pipe(
       filter((chunk: Chunk) => chunk.contentType === 'text'),
       
@@ -57,7 +55,8 @@ export const defaultAgent: AgentDefinition = {
       
       mergeMap((chunk: Chunk) => {
         if (chunk.annotations['chat.role'] !== 'user') return [chunk];
-        return processWithEvaluator(chunk, evaluator, session);
+        // Create fresh evaluator per message to pick up runtime config changes
+        return processWithEvaluator(chunk, session.createEvaluator(), session);
       }),
       
       catchError((error: Error) => {
