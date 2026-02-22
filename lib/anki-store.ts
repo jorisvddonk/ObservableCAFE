@@ -1,6 +1,6 @@
 /**
  * Anki Card Store
- * SQLite persistence for flashcard sets
+ * SQLite persistence for flashcard sets and study progress
  */
 
 import { Database } from 'bun:sqlite';
@@ -24,6 +24,8 @@ export interface AnkiSet {
   cardCount: number;
   dueCount: number;
   createdAt: number;
+  isApkg: boolean;
+  apkgPath: string | null;
 }
 
 export class AnkiStore {
@@ -40,9 +42,21 @@ export class AnkiStore {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         description TEXT,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        is_apkg INTEGER NOT NULL DEFAULT 0,
+        apkg_path TEXT
       )
     `);
+    
+    // Migration: Add is_apkg and apkg_path columns if they don't exist
+    const columnCheck = this.db.prepare(`SELECT * FROM pragma_table_info('anki_sets') WHERE name='is_apkg'`);
+    const columns = columnCheck.all();
+    columnCheck.finalize();
+    
+    if (columns.length === 0) {
+      this.db.run(`ALTER TABLE anki_sets ADD COLUMN is_apkg INTEGER NOT NULL DEFAULT 0`);
+      this.db.run(`ALTER TABLE anki_sets ADD COLUMN apkg_path TEXT`);
+    }
     
     this.db.run(`
       CREATE TABLE IF NOT EXISTS anki_cards (
@@ -68,13 +82,13 @@ export class AnkiStore {
     `);
   }
   
-  async createSet(name: string, description?: string): Promise<number> {
+  async createSet(name: string, description?: string, isApkg: boolean = false, apkgPath?: string): Promise<number> {
     const now = Date.now();
     const stmt = this.db.prepare(`
-      INSERT INTO anki_sets (name, description, created_at)
-      VALUES (?, ?, ?)
+      INSERT INTO anki_sets (name, description, created_at, is_apkg, apkg_path)
+      VALUES (?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(name, description || null, now);
+    const result = stmt.run(name, description || null, now, isApkg ? 1 : 0, apkgPath || null);
     stmt.finalize();
     return result.lastInsertRowid as number;
   }
@@ -83,7 +97,7 @@ export class AnkiStore {
     const now = Date.now();
     const stmt = this.db.prepare(`
       SELECT 
-        s.id, s.name, s.description, s.created_at as createdAt,
+        s.id, s.name, s.description, s.created_at as createdAt, s.is_apkg as isApkg, s.apkg_path as apkgPath,
         COUNT(c.id) as cardCount,
         SUM(CASE WHEN c.due <= ? THEN 1 ELSE 0 END) as dueCount
       FROM anki_sets s
@@ -99,7 +113,9 @@ export class AnkiStore {
       description: r.description,
       cardCount: r.cardCount || 0,
       dueCount: r.dueCount || 0,
-      createdAt: r.createdAt
+      createdAt: r.createdAt,
+      isApkg: !!r.isApkg,
+      apkgPath: r.apkgPath
     }));
   }
   
@@ -107,7 +123,7 @@ export class AnkiStore {
     const now = Date.now();
     const stmt = this.db.prepare(`
       SELECT 
-        s.id, s.name, s.description, s.created_at as createdAt,
+        s.id, s.name, s.description, s.created_at as createdAt, s.is_apkg as isApkg, s.apkg_path as apkgPath,
         COUNT(c.id) as cardCount,
         SUM(CASE WHEN c.due <= ? THEN 1 ELSE 0 END) as dueCount
       FROM anki_sets s
@@ -124,7 +140,9 @@ export class AnkiStore {
       description: result.description,
       cardCount: result.cardCount || 0,
       dueCount: result.dueCount || 0,
-      createdAt: result.createdAt
+      createdAt: result.createdAt,
+      isApkg: !!result.isApkg,
+      apkgPath: result.apkgPath
     };
   }
   
@@ -132,7 +150,7 @@ export class AnkiStore {
     const now = Date.now();
     const stmt = this.db.prepare(`
       SELECT 
-        s.id, s.name, s.description, s.created_at as createdAt,
+        s.id, s.name, s.description, s.created_at as createdAt, s.is_apkg as isApkg, s.apkg_path as apkgPath,
         COUNT(c.id) as cardCount,
         SUM(CASE WHEN c.due <= ? THEN 1 ELSE 0 END) as dueCount
       FROM anki_sets s
@@ -149,7 +167,9 @@ export class AnkiStore {
       description: result.description,
       cardCount: result.cardCount || 0,
       dueCount: result.dueCount || 0,
-      createdAt: result.createdAt
+      createdAt: result.createdAt,
+      isApkg: !!result.isApkg,
+      apkgPath: result.apkgPath
     };
   }
   
