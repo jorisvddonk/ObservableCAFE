@@ -802,9 +802,7 @@ class RXCafeChat {
             const data = await response.json();
             
             if (data.sessionId) {
-                this.sessionId = data.sessionId;
-                this.agentName = data.agentName;
-                this.isBackground = data.isBackground;
+                this.hideBackendModal();
                 
                 // Add to known sessions
                 const existingIndex = this.knownSessions.findIndex(s => s.id === data.sessionId);
@@ -816,27 +814,17 @@ class RXCafeChat {
                     });
                 }
                 
-                const info = [];
-                info.push(this.agentName);
-                if (selectedBackend) info.push(selectedBackend);
-                if (selectedModel) info.push(selectedModel);
-                if (this.isBackground) info.push('[background]');
-                this.backendInfoEl.textContent = info.join(' | ');
+                // Use switchToSession to properly load history, render chunks, update UI
+                await this.switchToSession(data.sessionId);
                 
-                this.updateUIState();
-                this.messagesEl.innerHTML = '';
-                this.chunkElements.clear();
-                this.rawChunks = [];
+                // Add welcome messages after switchToSession completes
                 this.addSystemMessage(`Session created: ${this.agentName}`);
                 if (selectedBackend) {
                     this.addSystemMessage(`Backend: ${selectedBackend}${selectedModel ? ' (' + selectedModel + ')' : ''}`);
                 }
                 this.addSystemMessage('Commands: /web URL | /system prompt | /addchunk JSON');
-                this.hideBackendModal();
+                
                 this.messageInput.focus();
-                this.updateInspector();
-                // Connect SSE stream for live updates
-                this.connectStream(data.sessionId);
             }
         } catch (error) {
             console.error('Failed to create session:', error);
