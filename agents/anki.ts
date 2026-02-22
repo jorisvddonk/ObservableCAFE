@@ -200,6 +200,22 @@ async function emitCardChunks(
   header: string,
   showAnswer: boolean = false
 ): Promise<void> {
+  const stripImages = (html: string) => html.replace(/<img[^>]*>/gi, '').trim();
+  
+  let content = header;
+  if (showAnswer) {
+    content += `\n\n${stripImages(card.back)}\n\nRate: \`!again\` \`!hard\` \`!good\` \`!easy\``;
+  } else {
+    content += `\n\n${stripImages(card.front)}`;
+  }
+  
+  const textChunk = createMarkdownChunk(content, 'anki-agent', {
+    'chat.role': 'assistant',
+    'anki.card-id': card.id
+  });
+  
+  session.outputStream.next(textChunk);
+  
   const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   const neededMedia = new Set<string>();
   let match;
@@ -218,22 +234,6 @@ async function emitCardChunks(
       session.outputStream.next(mediaChunk);
     }
   }
-  
-  const stripImages = (html: string) => html.replace(/<img[^>]*>/gi, '').trim();
-  
-  let content = header;
-  if (showAnswer) {
-    content += `\n\n${stripImages(card.back)}\n\nRate: \`!again\` \`!hard\` \`!good\` \`!easy\``;
-  } else {
-    content += `\n\n${stripImages(card.front)}`;
-  }
-  
-  const textChunk = createMarkdownChunk(content, 'anki-agent', {
-    'chat.role': 'assistant',
-    'anki.card-id': card.id
-  });
-  
-  session.outputStream.next(textChunk);
 }
 
 export const ankiAgent: AgentDefinition = {
