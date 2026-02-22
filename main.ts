@@ -26,7 +26,7 @@ import {
   createTextChunk,
   type Chunk
 } from './lib/chunk.js';
-import { connectedAgentStore } from './lib/connected-agents.js';
+import { connectedAgentStore, type ConnectedAgent } from './lib/connected-agents.js';
 import {
   getDefaultConfig,
   createSession,
@@ -416,6 +416,22 @@ function createForbiddenResponse(): Response {
     status: 403,
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+function verifyAgentAuth(request: Request): { agent: ConnectedAgent } | { error: Response } {
+  const apiKey = request.headers.get('X-API-Key');
+  
+  if (!apiKey) {
+    return { error: new Response(JSON.stringify({ error: 'X-API-Key header required' }), { status: 401, headers: { 'Content-Type': 'application/json' } }) };
+  }
+  
+  const agent = connectedAgentStore.getByApiKey(apiKey);
+  
+  if (!agent) {
+    return { error: new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401, headers: { 'Content-Type': 'application/json' } }) };
+  }
+  
+  return { agent };
 }
 
 // =============================================================================
@@ -1718,6 +1734,104 @@ const server = serve({
       });
     }
     
+    // Connected Agents API (uses agent auth, not client trust)
+    // Registration requires client trust (handled below)
+    // All other endpoints use X-API-Key from the agent's registration
+    
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+$/) && request.method === 'DELETE') {
+      const agentId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleUnregisterConnectedAgent(agentId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/sessions$/) && request.method === 'GET') {
+      const agentId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleGetAgentSessions(agentId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentSubscribe(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'DELETE') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentUnsubscribe(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentJoin(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'DELETE') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentLeave(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/connected-agents$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      const response = handleGetSessionConnectedAgents(sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/stream\/agent$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = handleAgentSessionStream(request, sessionId);
+      return response;
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/agent-chunk$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleAgentProduceChunk(request, sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
     // Verify client for all API endpoints below
     const { trusted, token } = verifyClient(request);
     if (!trusted) {
@@ -1858,70 +1972,6 @@ const server = serve({
     if (pathname === '/api/connected-agents' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
       const response = handleRegisterConnectedAgent(body);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+$/) && request.method === 'DELETE') {
-      const agentId = pathname.split('/')[3];
-      const response = handleUnregisterConnectedAgent(agentId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/sessions$/) && request.method === 'GET') {
-      const agentId = pathname.split('/')[3];
-      const response = handleGetAgentSessions(agentId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'POST') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const response = handleAgentSubscribe(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'DELETE') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const response = handleAgentUnsubscribe(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'POST') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const response = handleAgentJoin(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'DELETE') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const response = handleAgentLeave(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/session\/[^/]+\/connected-agents$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = handleGetSessionConnectedAgents(sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    // Connected agent stream (SSE)
-    if (pathname.match(/^\/api\/session\/[^/]+\/stream\/agent$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = handleAgentSessionStream(request, sessionId);
-      return response;
-    }
-
-    // Produce chunk as connected agent
-    if (pathname.match(/^\/api\/session\/[^/]+\/agent-chunk$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleAgentProduceChunk(request, sessionId);
       return addCors(response, corsHeaders);
     }
     
