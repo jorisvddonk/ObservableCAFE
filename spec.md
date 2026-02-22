@@ -1,4 +1,4 @@
-RXCAFE: A Reactive Architecture for Chunk-Based Evaluation Pipelines
+ObservableCAFE: A Reactive Architecture for Chunk-Based Evaluation Pipelines
 ====================================================================
 
 Version 2.1
@@ -6,9 +6,9 @@ Version 2.1
 1. Overview
 -----------
 
-RXCAFE is an architectural pattern for building systems where data flows through reactive streams as discrete units called _chunks_, processed by composable functions called _evaluators_ and organized into high-level _pipelines_ by _agents_. It is designed to support LLM-assisted applications, background agents, media processing pipelines, and data analysis workflows using a unified set of primitives.
+ObservableCAFE is an architectural pattern for building systems where data flows through reactive streams as discrete units called _chunks_, processed by composable functions called _evaluators_ and organized into high-level _pipelines_ by _agents_. It is designed to support LLM-assisted applications, background agents, media processing pipelines, and data analysis workflows using a unified set of primitives.
 
-RXCAFE is built on four key insights:
+ObservableCAFE is built on four key insights:
 
 1. **Reactive composition enables complex behavior from simple parts.** By expressing all routing, sequencing, and parallelism through standard reactive stream operators, systems remain comprehensible and debuggable.
 
@@ -18,7 +18,7 @@ RXCAFE is built on four key insights:
 
 4. **Leveraging well-known primitives maximizes productivity.** By building on Reactive Extensions patterns already present in LLM training data, systems can be designed, debugged, and extended by both developers and AI coding assistants with minimal learning overhead.
 
-RXCAFE does not prescribe a specific runtime. It defines concepts and constraints that map onto existing reactive stream systems (RxJS, Reactor, Rx.NET, etc.).
+ObservableCAFE does not prescribe a specific runtime. It defines concepts and constraints that map onto existing reactive stream systems (RxJS, Reactor, Rx.NET, etc.).
 
 ---
 
@@ -27,7 +27,7 @@ RXCAFE does not prescribe a specific runtime. It defines concepts and constraint
 
 ### 2.1 Chunks
 
-A _chunk_ is the fundamental unit of data in RXCAFE.
+A _chunk_ is the fundamental unit of data in ObservableCAFE.
 
 Each chunk has:
 
@@ -58,7 +58,7 @@ Properties:
 
 ### 2.3 Streams
 
-RXCAFE systems typically define three primary stream types:
+ObservableCAFE systems typically define three primary stream types:
 
 1. **Input Stream**: Receives external events (user messages, webhooks, timer ticks).
 2. **Output Stream**: The authoritative, append-only feed of all processed chunks. This stream is typically used for history persistence and UI rendering.

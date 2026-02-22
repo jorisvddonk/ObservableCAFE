@@ -1,10 +1,10 @@
-# RXCAFE Chat
+# ObservableCAFE Chat
 
-A reactive chat application built with the RXCAFE architecture pattern, using Bun.js. Supports both KoboldCPP and Ollama LLM backends with advanced session management, background agents, and multi-modal support.
+A reactive chat application built with the ObservableCAFE architecture pattern, using Bun.js. Supports both KoboldCPP and Ollama LLM backends with advanced session management, background agents, and multi-modal support.
 
 ## Features
 
-- **RXCAFE Architecture**: Chunks, annotations, and evaluators following the RXCAFE spec.
+- **ObservableCAFE Architecture**: Chunks, annotations, and evaluators following the ObservableCAFE spec.
 - **Multiple LLM Backends**: Support for KoboldCPP and Ollama.
 - **Advanced Session Management**: 
   - Permanent, collapsible sessions sidebar on desktop.
@@ -33,7 +33,7 @@ A reactive chat application built with the RXCAFE architecture pattern, using Bu
 
 ## Architecture
 
-This app implements the RXCAFE pattern:
+This app implements the ObservableCAFE pattern:
 
 - **Chunks** (`lib/chunk.ts`): Immutable data units (text, binary, or null) with producer IDs and annotations.
 - **Streams** (`lib/stream.ts`): RxJS-based reactive streams that process chunks through agent-defined pipelines.
@@ -98,10 +98,10 @@ Subscriptions are stored in the database and automatically restored when the ser
 
 ## Agents and External Paths
 
-Agents are discovered automatically in the `agents/` directory. You can also load agents from external directories by setting the `RXCAFE_AGENT_SEARCH_PATHS` variable:
+Agents are discovered automatically in the `agents/` directory. You can also load agents from external directories by setting the `ObservableCAFE_AGENT_SEARCH_PATHS` variable:
 
 ```bash
-export RXCAFE_AGENT_SEARCH_PATHS="/path/to/my/agents:/opt/custom-agents"
+export ObservableCAFE_AGENT_SEARCH_PATHS="/path/to/my/agents:/opt/custom-agents"
 bun start
 ```
 
@@ -124,9 +124,9 @@ bun start
 - `LLM_BACKEND`: Default LLM backend: `kobold` or `ollama`.
 - `KOBOLD_URL` - KoboldCPP server URL.
 - `OLLAMA_URL` - Ollama server URL.
-- `RXCAFE_AGENT_SEARCH_PATHS`: Colon-separated list of directories to scan for agents.
+- `ObservableCAFE_AGENT_SEARCH_PATHS`: Colon-separated list of directories to scan for agents.
 - `PORT`: HTTP server port (default: `3000`).
-- `RXCAFE_TRACE`: Set to `1` to enable detailed logging of LLM context.
+- `ObservableCAFE_TRACE`: Set to `1` to enable detailed logging of LLM context.
 - `TELEGRAM_TOKEN`: Telegram bot token.
 - `TRUST_DB_PATH`: Path to the SQLite trust and session database.
 
