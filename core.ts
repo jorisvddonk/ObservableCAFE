@@ -266,7 +266,7 @@ export async function createSession(
         // Scan history for the most recent display name
         for (let i = session.history.length - 1; i >= 0; i--) {
           const chunk = session.history[i];
-          if (chunk.annotations['session.name']) {
+          if (chunk.annotations && chunk.annotations['session.name']) {
             session.displayName = String(chunk.annotations['session.name']);
             break;
           }
@@ -280,7 +280,7 @@ export async function createSession(
   outputStream.subscribe({
     next: (chunk) => {
       // Check for session naming annotation
-      if (chunk.annotations['session.name']) {
+      if (chunk.annotations && chunk.annotations['session.name']) {
         session.displayName = String(chunk.annotations['session.name']);
         console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
       }
