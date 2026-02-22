@@ -48,7 +48,7 @@ export function processWithEvaluator(
     // Signal start of generation
     subscriber.next(createNullChunk('com.rxcafe.llm', {
       'llm.generation-started': true,
-      'llm.backend': session.sessionConfig.backend || session.config.backend,
+      'llm.backend': (session as any).runtimeConfig?.backend || session.config.backend,
       'llm.parent-chunk-id': chunk.id
     }));
     

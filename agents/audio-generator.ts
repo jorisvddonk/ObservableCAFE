@@ -9,6 +9,7 @@ import { filter } from '../lib/stream.js';
 export const audioGeneratorAgent: AgentDefinition = {
   name: 'audio-generator',
   description: 'Generates a simple 1-second audio tone in response to messages',
+  configSchema: [],
   
   initialize(session: AgentSessionContext) {
     console.log(`[AudioGenerator] Initializing for session ${session.id}`);

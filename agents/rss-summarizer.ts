@@ -13,6 +13,7 @@ export const rssSummarizerAgent: AgentDefinition = {
   name: 'rss-summarizer',
   description: 'Daily RSS feed summarizer (runs at 07:00)',
   startInBackground: true,
+  configSchema: [],
   
   async initialize(session: AgentSessionContext) {
     console.log(`[RssAgent] Initializing for session ${session.id}`);

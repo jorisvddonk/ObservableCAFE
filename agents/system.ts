@@ -47,6 +47,7 @@ export const systemAgent: AgentDefinition = {
   name: 'system',
   description: 'Background agent for administrative operations. API-only access.',
   startInBackground: true,
+  configSchema: [],
   
   async initialize(session: AgentSessionContext) {
     const trustDb = new Database(TRUST_DB_PATH);

@@ -9,6 +9,7 @@ import { filter } from '../lib/stream.js';
 export const imagePainterAgent: AgentDefinition = {
   name: 'image-painter',
   description: 'Generates random pixel images in response to messages',
+  configSchema: [],
   
   initialize(session: AgentSessionContext) {
     console.log(`[ImagePainter] Initializing for session ${session.id}`);

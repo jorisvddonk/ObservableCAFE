@@ -484,8 +484,6 @@ class RXCafeChat {
             
             if (data.sessionId) {
                 this.sessionId = data.sessionId;
-                this.backend = data.backend;
-                this.model = data.model;
                 
                 const sessionInfo = this.knownSessions.find(s => s.id === sessionId);
                 if (sessionInfo) {
@@ -494,10 +492,26 @@ class RXCafeChat {
                     if (data.displayName) sessionInfo.displayName = data.displayName;
                 }
                 
+                // Extract runtime config from history chunks
+                let backend = null;
+                let model = null;
+                if (data.chunks) {
+                    for (let i = data.chunks.length - 1; i >= 0; i--) {
+                        const chunk = data.chunks[i];
+                        if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
+                            backend = chunk.annotations['config.backend'];
+                            model = chunk.annotations['config.model'];
+                            break;
+                        }
+                    }
+                }
+                this.backend = backend;
+                this.model = model;
+                
                 const info = [];
                 info.push(data.displayName || this.agentName || 'unknown');
-                if (this.backend) info.push(this.backend);
-                if (this.model) info.push(this.model);
+                if (backend) info.push(backend);
+                if (model) info.push(model);
                 if (this.isBackground) info.push('[background]');
                 this.backendInfoEl.textContent = info.join(' | ');
                 
@@ -548,6 +562,22 @@ class RXCafeChat {
                 if (data.type === 'chunk') {
                     const chunk = data.chunk;
                     const role = chunk.annotations?.['chat.role'];
+
+                    // Check for runtime config chunk
+                    if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
+                        this.backend = chunk.annotations['config.backend'] || this.backend;
+                        this.model = chunk.annotations['config.model'] || this.model;
+                        console.log(`[RXCAFE] Runtime config updated: backend=${this.backend}, model=${this.model}`);
+                        
+                        // Update header
+                        const session = this.knownSessions.find(s => s.id === this.sessionId);
+                        const info = [];
+                        info.push(session?.displayName || this.agentName || 'unknown');
+                        if (this.backend) info.push(this.backend);
+                        if (this.model) info.push(this.model);
+                        if (this.isBackground) info.push('[background]');
+                        this.backendInfoEl.textContent = info.join(' | ');
+                    }
 
                     // Check for session naming annotation
                     if (chunk.annotations?.['session.name']) {
@@ -773,8 +803,6 @@ class RXCafeChat {
             
             if (data.sessionId) {
                 this.sessionId = data.sessionId;
-                this.backend = data.backend;
-                this.model = data.model;
                 this.agentName = data.agentName;
                 this.isBackground = data.isBackground;
                 
@@ -790,8 +818,8 @@ class RXCafeChat {
                 
                 const info = [];
                 info.push(this.agentName);
-                if (this.backend) info.push(this.backend);
-                if (this.model) info.push(this.model);
+                if (selectedBackend) info.push(selectedBackend);
+                if (selectedModel) info.push(selectedModel);
                 if (this.isBackground) info.push('[background]');
                 this.backendInfoEl.textContent = info.join(' | ');
                 
@@ -800,8 +828,8 @@ class RXCafeChat {
                 this.chunkElements.clear();
                 this.rawChunks = [];
                 this.addSystemMessage(`Session created: ${this.agentName}`);
-                if (this.backend) {
-                    this.addSystemMessage(`Backend: ${this.backend}${this.model ? ' (' + this.model + ')' : ''}`);
+                if (selectedBackend) {
+                    this.addSystemMessage(`Backend: ${selectedBackend}${selectedModel ? ' (' + selectedModel + ')' : ''}`);
                 }
                 this.addSystemMessage('Commands: /web URL | /system prompt | /addchunk JSON');
                 this.hideBackendModal();

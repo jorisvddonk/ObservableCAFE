@@ -51,7 +51,9 @@ import {
   type AgentEvaluator,
   type LLMParams,
   type SessionConfig,
-  type ChatCallbacks 
+  type RuntimeSessionConfig,
+  type ChatCallbacks,
+  extractRuntimeConfigFromChunk
 } from './lib/agent.js';
 import { getAgent, loadAgents, listAgents, listBackgroundAgents } from './lib/agent-loader.js';
 import { SessionStore } from './lib/session-store.js';
@@ -134,7 +136,7 @@ export interface Session {
   callbacks: ChatCallbacks | null;
   systemPrompt: string | null;
   displayName?: string;
-  sessionConfig: SessionConfig;
+  runtimeConfig: RuntimeSessionConfig;
   pipelineSubscription?: { unsubscribe: () => void };
 
   _agentContext?: AgentSessionContext;
@@ -152,21 +154,16 @@ export function getSessionStore(): SessionStore | null {
 }
 
 export interface CreateSessionOptions {
-  backend?: LLMBackend;
-  model?: string;
   agentId?: string;
-  llmParams?: LLMParams;
-  systemPrompt?: string;
   isBackground?: boolean;
   sessionId?: string;
+  runtimeConfig?: RuntimeSessionConfig;
 }
 
 export async function createSession(
   config: CoreConfig,
   options?: CreateSessionOptions
 ): Promise<Session> {
-  const backend = options?.backend || config.backend;
-  const model = options?.model;
   const agentId = options?.agentId || 'default';
   const isBackground = options?.isBackground || false;
   const id = options?.sessionId || `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -175,19 +172,15 @@ export async function createSession(
   const outputStream = new Subject<Chunk>();
   const errorStream = new Subject<Error>();
   
-  const sessionConfig: SessionConfig = {
-    backend,
-    model,
-    llmParams: options?.llmParams,
-    systemPrompt: options?.systemPrompt,
-  };
-  
   const agent = getAgent(agentId);
   if (!agent) {
     throw new Error(`Agent not found: ${agentId}`);
   }
   
-  const llmEvaluator = createEvaluator(backend, config, model, options?.llmParams);
+  // Use runtime config if provided directly
+  const runtimeConfig: RuntimeSessionConfig = options?.runtimeConfig || {};
+  const backend = runtimeConfig.backend || config.backend;
+  const model = runtimeConfig.model || config.ollamaModel;
   
   const session: Session = {
     id,
@@ -197,14 +190,14 @@ export async function createSession(
     outputStream,
     errorStream,
     history: [],
-    llmEvaluator,
+    llmEvaluator: createEvaluator(backend, config, model, runtimeConfig.llmParams),
     backend,
     model,
     abortController: null,
     trustedChunks: new Set(),
     callbacks: null,
-    systemPrompt: options?.systemPrompt || null,
-    sessionConfig,
+    systemPrompt: runtimeConfig.systemPrompt || null,
+    runtimeConfig,
   };
   
   const agentContext: AgentSessionContext = {
@@ -216,7 +209,7 @@ export async function createSession(
     errorStream,
     history: session.history,
     config,
-    sessionConfig,
+    sessionConfig: {},
     systemPrompt: session.systemPrompt,
     trustedChunks: session.trustedChunks,
     get callbacks() { return session.callbacks; },
@@ -229,14 +222,14 @@ export async function createSession(
 
       if (typeof backendOrParams === 'object') {
         // One-liner: session.createEvaluator({ temperature: 0 })
-        b = sessionConfig.backend || config.backend;
-        m = sessionConfig.model;
-        p = { ...sessionConfig.llmParams, ...backendOrParams };
+        b = session.runtimeConfig.backend || config.backend;
+        m = session.runtimeConfig.model;
+        p = { ...session.runtimeConfig.llmParams, ...backendOrParams };
       } else {
         // Standard: session.createEvaluator('ollama', 'llama3', { ... })
-        b = backendOrParams || sessionConfig.backend || config.backend;
-        m = model || sessionConfig.model;
-        p = { ...sessionConfig.llmParams, ...params };
+        b = backendOrParams || session.runtimeConfig.backend || config.backend;
+        m = model || session.runtimeConfig.model;
+        p = { ...session.runtimeConfig.llmParams, ...params };
       }
 
       const evaluator = createEvaluator(b, config, m, p);
@@ -252,7 +245,7 @@ export async function createSession(
     
     persistState: async (): Promise<void> => {
       if (sessionStore) {
-        await sessionStore.saveSession(id, agentId, isBackground, sessionConfig, session.systemPrompt);
+        await sessionStore.saveSession(id, agentId, isBackground, {});
         await sessionStore.saveHistory(id, session.history);
       }
     },
@@ -263,6 +256,15 @@ export async function createSession(
         session.history.length = 0;
         session.history.push(...savedHistory);
         
+        // Scan history for the most recent config chunk
+        for (let i = session.history.length - 1; i >= 0; i--) {
+          const chunk = session.history[i];
+          if (chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime') {
+            session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
+            break;
+          }
+        }
+        
         // Scan history for the most recent display name
         for (let i = session.history.length - 1; i >= 0; i--) {
           const chunk = session.history[i];
@@ -270,6 +272,25 @@ export async function createSession(
             session.displayName = String(chunk.annotations['session.name']);
             break;
           }
+        }
+        
+        // Update session with extracted config
+        if (session.runtimeConfig.backend) {
+          session.backend = session.runtimeConfig.backend;
+        }
+        if (session.runtimeConfig.model) {
+          session.model = session.runtimeConfig.model;
+        }
+        if (session.runtimeConfig.systemPrompt) {
+          session.systemPrompt = session.runtimeConfig.systemPrompt;
+        }
+        if (session.runtimeConfig.llmParams) {
+          session.llmEvaluator = createEvaluator(
+            session.backend,
+            config,
+            session.model,
+            session.runtimeConfig.llmParams
+          );
         }
       }
     },
@@ -283,6 +304,31 @@ export async function createSession(
       if (chunk.annotations && chunk.annotations['session.name']) {
         session.displayName = String(chunk.annotations['session.name']);
         console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
+      }
+      
+      // Check for runtime config chunk
+      if (chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime') {
+        session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
+        console.log(`[Core] Session ${session.id} runtime config updated:`, session.runtimeConfig);
+        
+        // Update session with extracted config
+        if (session.runtimeConfig.backend) {
+          session.backend = session.runtimeConfig.backend;
+        }
+        if (session.runtimeConfig.model) {
+          session.model = session.runtimeConfig.model;
+        }
+        if (session.runtimeConfig.systemPrompt) {
+          session.systemPrompt = session.runtimeConfig.systemPrompt;
+        }
+        if (session.runtimeConfig.llmParams) {
+          session.llmEvaluator = createEvaluator(
+            session.backend,
+            config,
+            session.model,
+            session.runtimeConfig.llmParams
+          );
+        }
       }
       
       const existingIndex = session.history.findIndex(c => c.id === chunk.id);
@@ -302,16 +348,17 @@ export async function createSession(
       const role = chunk.annotations['chat.role'];
       const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
       const isSessionName = !!chunk.annotations['session.name'];
+      const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime';
       
       if ((chunk.contentType === 'text' || chunk.contentType === 'null') && 
-          (role === 'user' || role === 'system' || isWeb || isSessionName)) {
+          (role === 'user' || role === 'system' || isWeb || isSessionName || isRuntimeConfig)) {
         outputStream.next(chunk);
       }
     }
   });
   
   if (sessionStore) {
-    await sessionStore.saveSession(id, agentId, isBackground, sessionConfig, session.systemPrompt);
+    await sessionStore.saveSession(id, agentId, isBackground, {});
   }
   
   await agent.initialize(agentContext);
@@ -374,17 +421,12 @@ export async function restorePersistedSessions(config: CoreConfig): Promise<numb
     }
     
     try {
-      const sessionData = await sessionStore.loadSession(persisted.id);
-      if (!sessionData) continue;
-      
       console.log(`[Core] Restoring session: ${persisted.id} (${persisted.agentName})`);
       
       const session = await createSession(config, {
         agentId: persisted.agentName,
         isBackground: persisted.isBackground,
         sessionId: persisted.id,
-        ...sessionData.config,
-        systemPrompt: sessionData.systemPrompt || undefined,
       });
       
       if (session._agentContext) {
@@ -419,7 +461,6 @@ export async function startBackgroundAgents(config: CoreConfig): Promise<void> {
           agentId: agent.name,
           isBackground: true,
           sessionId: existingSession.id,
-          ...existingSession.config,
         });
         
         if (session._agentContext) {

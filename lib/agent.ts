@@ -23,16 +23,19 @@ export interface LLMParams {
 }
 
 export interface SessionConfig {
-  backend?: LLMBackend;
-  model?: string;
-  llmParams?: LLMParams;
-  systemPrompt?: string;
 }
 
 export interface AgentDefinition {
   name: string;
   description?: string;
   startInBackground?: boolean;
+  configSchema?: Array<{
+    key: string;
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+    description?: string;
+    required?: boolean;
+    default?: any;
+  }>;
   
   initialize(session: AgentSessionContext): void | Promise<void>;
   destroy?(session: AgentSessionContext): void | Promise<void>;
@@ -76,7 +79,7 @@ export interface ChatCallbacks {
   onError: (error: Error) => void;
 }
 
-export function extractLLMParamsFromConfig(configChunk: Chunk): LLMParams {
+export function extractLLMParamsFromChunk(configChunk: Chunk): LLMParams {
   const params: LLMParams = {};
   
   if (configChunk.annotations['config.llm.temperature'] !== undefined) {
@@ -110,11 +113,18 @@ export function extractLLMParamsFromConfig(configChunk: Chunk): LLMParams {
   return params;
 }
 
-export function extractSessionConfigFromChunk(configChunk: Chunk): SessionConfig {
+export interface RuntimeSessionConfig {
+  backend?: LLMBackend;
+  model?: string;
+  llmParams?: LLMParams;
+  systemPrompt?: string;
+}
+
+export function extractRuntimeConfigFromChunk(configChunk: Chunk): RuntimeSessionConfig {
   return {
     backend: configChunk.annotations['config.backend'],
     model: configChunk.annotations['config.model'],
-    llmParams: extractLLMParamsFromConfig(configChunk),
+    llmParams: extractLLMParamsFromChunk(configChunk),
     systemPrompt: configChunk.annotations['config.systemPrompt'],
   };
 }

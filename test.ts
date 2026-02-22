@@ -103,10 +103,11 @@ class TestRunner {
     
     await loadAgentsFromDisk();
     
-    const session = await createSession(config, {
-      backend: options.backend as 'ollama' | 'kobold',
-      model: options.model,
-    });
+    const runtimeConfig: { backend?: string; model?: string } = {};
+    if (options.backend) runtimeConfig.backend = options.backend;
+    if (options.model) runtimeConfig.model = options.model;
+    
+    const session = await createSession(config, { runtimeConfig });
     
     const runner = new TestRunner();
     runner.options = options;

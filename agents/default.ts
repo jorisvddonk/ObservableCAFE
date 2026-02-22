@@ -12,6 +12,32 @@ import { processWithEvaluator } from '../lib/evaluator-utils.js';
 export const defaultAgent: AgentDefinition = {
   name: 'default',
   description: 'Standard chat pipeline with trust filtering',
+  configSchema: [
+    {
+      key: 'backend',
+      type: 'string',
+      description: 'LLM backend to use (kobold or ollama)',
+      required: false,
+    },
+    {
+      key: 'model',
+      type: 'string',
+      description: 'Model name to use',
+      required: false,
+    },
+    {
+      key: 'systemPrompt',
+      type: 'string',
+      description: 'System prompt for the LLM',
+      required: false,
+    },
+    {
+      key: 'llmParams',
+      type: 'object',
+      description: 'LLM parameters (temperature, maxTokens, etc.)',
+      required: false,
+    },
+  ],
   
   initialize(session: AgentSessionContext) {
     const evaluator = session.createEvaluator();

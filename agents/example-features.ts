@@ -12,6 +12,20 @@ import { processWithEvaluator } from '../lib/evaluator-utils.js';
 export const exampleFeaturesAgent: AgentDefinition = {
   name: 'example-features',
   description: 'Demonstrates modular evaluators with sentiment analysis',
+  configSchema: [
+    {
+      key: 'backend',
+      type: 'string',
+      description: 'LLM backend to use (kobold or ollama)',
+      required: false,
+    },
+    {
+      key: 'model',
+      type: 'string',
+      description: 'Model name to use',
+      required: false,
+    },
+  ],
   
   initialize(session: AgentSessionContext) {
     const chatEvaluator = session.createEvaluator();

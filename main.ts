@@ -24,6 +24,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   createTextChunk,
+  createNullChunk,
   type Chunk
 } from './lib/chunk.js';
 import { connectedAgentStore, type ConnectedAgent } from './lib/connected-agents.js';
@@ -54,7 +55,7 @@ import {
 import { TelegramBot, TelegramUser, TelegramConfig } from './lib/telegram.js';
 import { Database, extractClientToken, maskToken } from './lib/database.js';
 import { SessionStore } from './lib/session-store.js';
-import type { LLMParams } from './lib/agent.js';
+import type { LLMParams, RuntimeSessionConfig } from './lib/agent.js';
 import { Subscription } from './lib/stream.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -503,8 +504,6 @@ async function initTelegramBot(): Promise<void> {
               agentId: sessionData.agentName,
               isBackground: sessionData.isBackground,
               sessionId: defaultTelegramSessionId,
-              ...sessionData.config,
-              systemPrompt: sessionData.systemPrompt || undefined,
             });
             if (session._agentContext) await session._agentContext.loadState();
           }
@@ -716,7 +715,7 @@ async function initTelegramBot(): Promise<void> {
           telegramAllSessions.get(chatId)!.add(newSession.id);
           telegramCurrentSession.set(chatId, newSession.id);
           
-          await telegramBot!.sendMessage(chatId, `✅ New session created\n\nSession: \`${newSession.id}\`\nAgent: ${newSession.agentName}\nBackend: ${newSession.backend}${newSession.model ? ' (' + newSession.model + ')' : ''}`, { parseMode: 'Markdown' });
+          await telegramBot!.sendMessage(chatId, `✅ New session created\n\nSession: \`${newSession.id}\`\nAgent: ${newSession.agentName}`, { parseMode: 'Markdown' });
         } catch (err) {
           await telegramBot!.sendMessage(chatId, `❌ Failed to create session: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
@@ -1109,20 +1108,50 @@ function ensureTelegramSubscription(chatId: number, session: Session) {
 
 async function handleCreateSession(body?: any): Promise<Response> {
   try {
+    // Build runtime config from request
+    const runtimeConfig: RuntimeSessionConfig = {};
+    
+    if (body?.backend) runtimeConfig.backend = body.backend;
+    if (body?.model) runtimeConfig.model = body.model;
+    if (body?.systemPrompt) runtimeConfig.systemPrompt = body.systemPrompt;
+    if (body?.llmParams) runtimeConfig.llmParams = body.llmParams;
+    
     const options: CreateSessionOptions = {
-      backend: body?.backend,
-      model: body?.model,
       agentId: body?.agentId,
-      systemPrompt: body?.systemPrompt,
-      llmParams: body?.llmParams,
+      runtimeConfig,
     };
     
     const session = await createSession(config, options);
     
+    // Emit runtime config as a null chunk to history
+    if (body?.backend || body?.model || body?.systemPrompt || body?.llmParams) {
+      const annotations: Record<string, any> = {
+        'config.type': 'runtime',
+      };
+      
+      if (body.backend) annotations['config.backend'] = body.backend;
+      if (body.model) annotations['config.model'] = body.model;
+      if (body.systemPrompt) annotations['config.systemPrompt'] = body.systemPrompt;
+      
+      if (body.llmParams) {
+        const llmParams = body.llmParams;
+        if (llmParams.temperature !== undefined) annotations['config.llm.temperature'] = llmParams.temperature;
+        if (llmParams.maxTokens !== undefined) annotations['config.llm.maxTokens'] = llmParams.maxTokens;
+        if (llmParams.topP !== undefined) annotations['config.llm.topP'] = llmParams.topP;
+        if (llmParams.topK !== undefined) annotations['config.llm.topK'] = llmParams.topK;
+        if (llmParams.repeatPenalty !== undefined) annotations['config.llm.repeatPenalty'] = llmParams.repeatPenalty;
+        if (llmParams.stop !== undefined) annotations['config.llm.stop'] = llmParams.stop;
+        if (llmParams.seed !== undefined) annotations['config.llm.seed'] = llmParams.seed;
+        if (llmParams.maxContextLength !== undefined) annotations['config.llm.maxContextLength'] = llmParams.maxContextLength;
+        if (llmParams.numCtx !== undefined) annotations['config.llm.numCtx'] = llmParams.numCtx;
+      }
+      
+      const configChunk = createNullChunk('com.rxcafe.api', annotations);
+      session.outputStream.next(configChunk);
+    }
+    
     return new Response(JSON.stringify({ 
       sessionId: session.id,
-      backend: session.backend,
-      model: session.model,
       agentName: session.agentName,
       isBackground: session.isBackground,
       message: 'Session created'
@@ -1148,6 +1177,7 @@ async function handleListAgents(): Promise<Response> {
       name: a.name,
       description: a.description,
       startInBackground: a.startInBackground,
+      configSchema: a.configSchema || [],
     }))
   }), {
     headers: { 'Content-Type': 'application/json' }
@@ -1248,13 +1278,11 @@ async function handleGetHistory(sessionId: string): Promise<Response> {
   const historyChunks = session.history.filter(c => 
     c.contentType === 'text' || 
     c.contentType === 'binary' || 
-    (c.contentType === 'null' && c.annotations['session.name'])
+    (c.contentType === 'null' && (c.annotations['session.name'] || c.annotations['config.type'] === 'runtime'))
   );
   
   return new Response(JSON.stringify({ 
     sessionId,
-    backend: session.backend,
-    model: session.model,
     displayName: session.displayName,
     chunks: historyChunks
   }), {

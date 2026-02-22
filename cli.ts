@@ -37,10 +37,11 @@ async function main() {
 
   await loadAgentsFromDisk();
   
-  const session: Session = await createSession(config, {
-    backend: cliOptions.backend as 'kobold' | 'ollama',
-    model: cliOptions.model,
-  });
+  const runtimeConfig: { backend?: string; model?: string } = {};
+  if (cliOptions.backend) runtimeConfig.backend = cliOptions.backend;
+  if (cliOptions.model) runtimeConfig.model = cliOptions.model;
+  
+  const session: Session = await createSession(config, { runtimeConfig });
 
   const rl = readline.createInterface({
     input: process.stdin,
