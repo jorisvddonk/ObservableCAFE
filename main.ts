@@ -52,7 +52,7 @@ import {
   type CreateSessionOptions
 } from './core.js';
 import { TelegramBot, TelegramUser, TelegramConfig } from './lib/telegram.js';
-import { Database, extractClientToken, maskToken } from './lib/trust.js';
+import { Database, extractClientToken, maskToken } from './lib/database.js';
 import { SessionStore } from './lib/session-store.js';
 import type { LLMParams } from './lib/agent.js';
 import { Subscription } from './lib/stream.js';

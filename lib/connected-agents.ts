@@ -1,6 +1,6 @@
 import { Chunk, createNullChunk } from './chunk.js';
 import { getSession } from '../core.js';
-import { Database } from './trust.js';
+import { Database } from './database.js';
 
 export interface ConnectedAgent {
   id: string;
