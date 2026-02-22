@@ -205,7 +205,11 @@ function rateCard(state: AnkiState, rating: 'again' | 'hard' | 'good' | 'easy'):
 export const ankiAgent: AgentDefinition = {
   name: 'anki',
   description: 'Study flashcards with spaced repetition',
-  configSchema: [],
+  configSchema: {
+    type: 'object',
+    properties: {},
+    required: []
+  },
   
   async initialize(session: AgentSessionContext) {
     let state = createInitialState();

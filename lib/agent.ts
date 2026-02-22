@@ -29,13 +29,7 @@ export interface AgentDefinition {
   name: string;
   description?: string;
   startInBackground?: boolean;
-  configSchema?: Array<{
-    key: string;
-    type: 'string' | 'number' | 'boolean' | 'object' | 'array';
-    description?: string;
-    required?: boolean;
-    default?: any;
-  }>;
+  configSchema?: Record<string, any>;  // JSON Schema draft-07
   
   initialize(session: AgentSessionContext): void | Promise<void>;
   destroy?(session: AgentSessionContext): void | Promise<void>;

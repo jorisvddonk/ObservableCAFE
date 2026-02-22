@@ -13,20 +13,14 @@ export const newsReporterAgent: AgentDefinition = {
   name: 'news-reporter',
   description: 'Background agent that reports interesting tech news every hour.',
   startInBackground: false,
-  configSchema: [
-    {
-      key: 'backend',
-      type: 'string',
-      description: 'LLM backend to use (kobold or ollama)',
-      required: false,
+  configSchema: {
+    type: 'object',
+    properties: {
+      backend: { type: 'string', description: 'LLM backend (kobold or ollama)' },
+      model: { type: 'string', description: 'Model name' },
     },
-    {
-      key: 'model',
-      type: 'string',
-      description: 'Model name to use',
-      required: false,
-    },
-  ],
+    required: ['backend', 'model']
+  },
   
   async initialize(session: AgentSessionContext) {
     await session.loadState();

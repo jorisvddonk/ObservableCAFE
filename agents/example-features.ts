@@ -12,20 +12,14 @@ import { processWithEvaluator } from '../lib/evaluator-utils.js';
 export const exampleFeaturesAgent: AgentDefinition = {
   name: 'example-features',
   description: 'Demonstrates modular evaluators with sentiment analysis',
-  configSchema: [
-    {
-      key: 'backend',
-      type: 'string',
-      description: 'LLM backend to use (kobold or ollama)',
-      required: false,
+  configSchema: {
+    type: 'object',
+    properties: {
+      backend: { type: 'string', description: 'LLM backend (kobold or ollama)' },
+      model: { type: 'string', description: 'Model name' },
     },
-    {
-      key: 'model',
-      type: 'string',
-      description: 'Model name to use',
-      required: false,
-    },
-  ],
+    required: ['backend', 'model']
+  },
   
   initialize(session: AgentSessionContext) {
     const sub = session.inputStream.pipe(
