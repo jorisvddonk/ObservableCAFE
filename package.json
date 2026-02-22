@@ -1,7 +1,7 @@
 {
-  "name": "rxcafe-chat",
+  "name": "observable-cafe",
   "version": "1.0.0",
-  "description": "RXCAFE-based chat app with KoboldCPP API support",
+  "description": "CAFE-based chat app with KoboldCPP API support",
   "main": "main.ts",
   "type": "module",
   "scripts": {

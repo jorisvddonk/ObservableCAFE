@@ -1,6 +1,6 @@
 {
-  "name": "RXCAFE Chat",
-  "short_name": "RXCAFE",
+  "name": "ObservableCAFE Chat",
+  "short_name": "ObservableCAFE",
   "description": "Reactive chat app with LLM backends",
   "start_url": "/",
   "display": "standalone",

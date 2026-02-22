@@ -1,5 +1,5 @@
 /**
- * RXCAFE CLI - Command-line interface for chat inference
+ * ObservableCAFE CLI - Command-line interface for chat inference
  * 
  * Usage:
  *   bun run cli.ts
@@ -47,7 +47,7 @@ async function main() {
     output: process.stdout
   });
 
-  console.log('RXCAFE CLI');
+  console.log('ObservableCAFE CLI');
   console.log(`Backend: ${session.backend}`);
   if (session.model) console.log(`Model: ${session.model}`);
   console.log('');

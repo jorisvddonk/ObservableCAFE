@@ -1,5 +1,5 @@
 /**
- * RXCAFE Test - Automated playback testing for the pipeline
+ * ObservableCAFE Test - Automated playback testing for the pipeline
  * 
  * Usage:
  *   bun test                        # Run built-in tests with default backend
