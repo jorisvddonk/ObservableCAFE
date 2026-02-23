@@ -970,6 +970,23 @@ async function finalizeTelegramMessage(chatId: number, text: string, messageId: 
 async function switchTelegramSession(chatId: number, targetSessionId: string): Promise<void> {
   if (!telegramBot) return;
   
+  // Clean up transient subscription to previous session (only if not explicitly subscribed)
+  const previousSessionId = telegramCurrentSession.get(chatId);
+  if (previousSessionId && previousSessionId !== targetSessionId) {
+    const persistentSubs = trustDb.listTelegramSubscriptions(chatId);
+    if (!persistentSubs.includes(previousSessionId)) {
+      const subsMap = telegramSubscriptions.get(chatId);
+      if (subsMap) {
+        const sub = subsMap.get(previousSessionId);
+        if (sub) {
+          sub.unsubscribe();
+          subsMap.delete(previousSessionId);
+          console.log(`[Telegram] Unsubscribed chat ${chatId} from transient session ${previousSessionId}`);
+        }
+      }
+    }
+  }
+  
   let targetSession = getSession(targetSessionId);
   
   // If not active, try loading from persistence
