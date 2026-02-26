@@ -1456,6 +1456,7 @@ class RXCafeChat {
     
     updateUIState() {
         this.sendBtn.style.display = this.isGenerating ? 'none' : 'block';
+        this.sendBtn.disabled = !this.sessionId;
         this.abortBtn.style.display = this.isGenerating ? 'block' : 'none';
         this.messageInput.disabled = this.isGenerating || !this.sessionId;
         this.copySessionIdBtn.style.display = this.sessionId ? 'inline-block' : 'none';
