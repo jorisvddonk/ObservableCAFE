@@ -95,6 +95,7 @@ export function loadAgents(forceReload = false): Map<string, AgentDefinition> {
           agentSourceHashes.set(file, newHash);
           
           // Check named exports first
+          const loadedNames = new Set<string>();
           for (const exportName of Object.keys(module)) {
             if (exportName === 'default') continue;
             
@@ -103,12 +104,13 @@ export function loadAgents(forceReload = false): Map<string, AgentDefinition> {
             if (isAgentDefinition(exported)) {
               agents.set(exported.name, exported);
               agentNameToFile.set(exported.name, file);
+              loadedNames.add(exported.name);
               console.log(`[AgentLoader] Loaded agent: ${exported.name}${exported.startInBackground ? ' (background)' : ''} from ${file}`);
             }
           }
           
           // Then check default export if no named agent was found
-          if (module.default && isAgentDefinition(module.default)) {
+          if (module.default && isAgentDefinition(module.default) && !loadedNames.has(module.default.name)) {
             agents.set(module.default.name, module.default);
             agentNameToFile.set(module.default.name, file);
             console.log(`[AgentLoader] Loaded agent: ${module.default.name}${module.default.startInBackground ? ' (background)' : ''} from ${file}`);

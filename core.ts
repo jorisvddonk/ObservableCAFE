@@ -422,10 +422,8 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     console.warn(`[Core] Error calling destroy on old agent for session ${sessionId}:`, err);
   }
   
-  // Recreate streams to avoid stale data
-  session.inputStream = new Subject<Chunk>();
-  session.outputStream = new Subject<Chunk>();
-  session.errorStream = new Subject<Error>();
+  // Reuse existing streams - don't create new ones
+  // This preserves SSE connections and other subscribers
   
   // Rebuild agent context with new streams
   session._agentContext = {
@@ -480,43 +478,6 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
       // Already loaded, no-op
     },
   };
-  
-  // Re-subscribe to outputStream for history tracking
-  session.outputStream.subscribe({
-    next: (chunk) => {
-      if (chunk.annotations && chunk.annotations['session.name']) {
-        session.displayName = String(chunk.annotations['session.name']);
-      }
-      if (chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime') {
-        session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
-        session.backend = session.runtimeConfig.backend || config.backend;
-        session.model = session.runtimeConfig.model;
-        session.systemPrompt = session.runtimeConfig.systemPrompt || null;
-        session.llmEvaluator = createEvaluator(session.backend, config, session.model, session.runtimeConfig.llmParams);
-      }
-      const existingIndex = session.history.findIndex(c => c.id === chunk.id);
-      if (existingIndex !== -1) {
-        session.history[existingIndex] = chunk;
-      } else {
-        session.history.push(chunk);
-      }
-    }
-  });
-  
-  // Pass user messages to outputStream for history
-  session.inputStream.subscribe({
-    next: (chunk) => {
-      const role = chunk.annotations['chat.role'];
-      const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
-      const isSessionName = !!chunk.annotations['session.name'];
-      const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime';
-      
-      if ((chunk.contentType === 'text' || chunk.contentType === 'null') && 
-          (role === 'user' || role === 'system' || isWeb || isSessionName || isRuntimeConfig)) {
-        session.outputStream.next(chunk);
-      }
-    }
-  });
   
   // Initialize with new agent
   await newAgent.initialize(session._agentContext);
