@@ -69,6 +69,8 @@ import { filter, map, mergeMap, catchError, EMPTY } from '../lib/stream.js';
 export const {{AGENT_NAME}}: AgentDefinition = {
   name: '{{AGENT_NAME}}',
   description: '{{DESCRIPTION}}',
+  allowsReload: true,  // Set to false to prevent agent reloads (for stateful agents)
+  persistsState: true,  // Set to false to disable auto-persistence
   configSchema: {
     type: 'object',
     properties: {},
@@ -133,6 +135,8 @@ import { filter, map, mergeMap, catchError, EMPTY } from '../lib/stream.js';
 export const myAgent: AgentDefinition = {
   name: 'my-agent',
   description: 'What this agent does',
+  allowsReload: true,  // Set to false to prevent agent reloads (for stateful agents)
+  persistsState: true,  // Set to false to disable auto-persistence
   configSchema: {
     type: 'object',
     properties: {},
