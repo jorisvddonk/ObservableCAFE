@@ -143,7 +143,7 @@ export function clearAgents(): void {
   loaded = false;
 }
 
-export async function reloadAgents(specificAgents?: string[]): Promise<{
+export async function reloadAgents(specificAgents?: string[], forceAll = false): Promise<{
   loaded: string[];
   skipped: string[];
   newAgents: string[];
@@ -164,85 +164,55 @@ export async function reloadAgents(specificAgents?: string[]): Promise<{
     ? new Set(specificAgents) 
     : null;
   
+  // Determine which agents to reload
+  let agentsToReload: Set<string>;
+  
   if (toReload) {
-    // Reload specific agents only - preserve others
-    const preservedAgents = new Map<string, AgentDefinition>();
-    const statefulSkipped: string[] = [];
-    
-    for (const [name, agent] of previouslyLoaded) {
-      if (!toReload.has(name)) {
-        // Preserve agents not being reloaded
-        preservedAgents.set(name, agent);
-      } else if (agent.allowsReload === false) {
-        // Can't reload this one
-        statefulSkipped.push(name);
-        skipped.push(name);
-        preservedAgents.set(name, agent);
+    // Specific agents requested - use those
+    agentsToReload = toReload;
+  } else if (forceAll) {
+    // Force all - reload everything
+    agentsToReload = new Set(previouslyLoaded.keys());
+  } else {
+    // Smart reload - only reload agents whose source actually changed
+    const changedAgents = new Set<string>();
+    for (const [name, file] of previouslyLoadedFiles) {
+      const oldHash = oldHashes.get(name);
+      const newHash = computeFileHash(file);
+      if (oldHash && oldHash !== newHash) {
+        changedAgents.add(name);
       }
     }
-    
-    loadAgents(true);
-    
-    // Restore preserved agents (non-reloaded + skipped stateful)
-    for (const [name, agent] of preservedAgents) {
-      agents.set(name, agent);
-    }
-    
-    // Reload sessions that use changed agents
-    const config = getCoreConfig();
-    if (config) {
-      const { listActiveSessions, reloadSessionAgent } = await import('../core.js');
-      const activeSessions = listActiveSessions();
-      for (const s of activeSessions) {
-        if (toReload.has(s.agentName) && !skipped.includes(s.agentName)) {
-          await reloadSessionAgent(s.id, config);
-        }
-      }
-    }
-    
-    // Find which agents actually changed source
-    const changed: string[] = [];
-    for (const name of toReload) {
-      if (skipped.includes(name)) continue;
-      const file = agentNameToFile.get(name);
-      const oldFile = previouslyLoadedFiles.get(name);
-      if (file && oldFile) {
-        const oldHash = oldHashes.get(name);
-        const newHash = computeFileHash(file);
-        if (oldHash && oldHash !== newHash) {
-          changed.push(name);
-        }
-      }
-    }
-    
-    const loaded = Array.from(toReload).filter(name => !skipped.includes(name));
-    const newAgents = Array.from(agents.keys()).filter(name => !previouslyLoaded.has(name));
-    
-    return { loaded, skipped, newAgents, changed };
+    agentsToReload = changedAgents;
   }
   
-  // Reload all agents
+  // Reload the agents
+  if (agentsToReload.size > 0) {
+    loadAgents(true);
+  }
+  
+  // Handle stateful agents that can't be reloaded
   const statefulAgents = new Map<string, AgentDefinition>();
-  for (const [name, agent] of previouslyLoaded) {
-    if (agent.allowsReload === false) {
+  for (const name of agentsToReload) {
+    const agent = agents.get(name);
+    if (agent && agent.allowsReload === false) {
       statefulAgents.set(name, agent);
       skipped.push(name);
+      const oldAgent = previouslyLoaded.get(name);
+      if (oldAgent) {
+        agents.set(name, oldAgent);
+      }
+      agentsToReload.delete(name);
     }
-  }
-  
-  loadAgents(true);
-  
-  for (const [name, agent] of statefulAgents) {
-    agents.set(name, agent);
   }
   
   // Reload sessions that use changed agents
   const config = getCoreConfig();
-  if (config) {
+  if (config && agentsToReload.size > 0) {
     const { listActiveSessions, reloadSessionAgent } = await import('../core.js');
     const activeSessions = listActiveSessions();
     for (const s of activeSessions) {
-      if (s.agentName && !skipped.includes(s.agentName)) {
+      if (agentsToReload.has(s.agentName)) {
         await reloadSessionAgent(s.id, config);
       }
     }
@@ -250,9 +220,10 @@ export async function reloadAgents(specificAgents?: string[]): Promise<{
   
   // Find which agents actually changed source
   const changed: string[] = [];
-  for (const [name, file] of agentNameToFile) {
+  for (const name of agentsToReload) {
+    const file = agentNameToFile.get(name);
     const oldFile = previouslyLoadedFiles.get(name);
-    if (oldFile) {
+    if (file && oldFile) {
       const oldHash = oldHashes.get(name);
       const newHash = computeFileHash(file);
       if (oldHash && oldHash !== newHash) {

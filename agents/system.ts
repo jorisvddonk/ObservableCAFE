@@ -130,7 +130,10 @@ export const systemAgent: AgentDefinition = {
               return handleStatus(trustDb);
             
             case '!reload':
-              return await handleReload(args);
+              return await handleReload(args, false);
+            
+            case '!reload-force':
+              return await handleReload(args, true);
             
             default:
               return [createErrorChunk(`Unknown command: ${command}\n\nType !help for available commands.`)];
@@ -191,7 +194,8 @@ function handleHelp(): Chunk[] {
     '',
     'System:',
     '  !status                    Show system health summary',
-    '  !reload [agent1 agent2...] Reload all agents or specific ones',
+    '  !reload [agents...]        Reload agents with source changes',
+    '  !reload-force [agents...]  Force reload all agents',
     '  !help                      Show this help message',
   ];
   
@@ -477,12 +481,12 @@ function handleStatus(trustDb: Database): Chunk[] {
   return [createResponseChunk(lines.join('\n'))];
 }
 
-async function handleReload(args: string[]): Promise<Chunk[]> {
+async function handleReload(args: string[], force: boolean): Promise<Chunk[]> {
   const specificAgents = args.length > 0 ? args : undefined;
-  const result = await reloadAgents(specificAgents);
+  const result = await reloadAgents(specificAgents, force);
   
   const lines = [
-    '🔄 Agent Reload Complete',
+    force ? '🔄 Agent Force Reload Complete' : '🔄 Agent Reload Complete',
     '',
   ];
   
@@ -491,14 +495,19 @@ async function handleReload(args: string[]): Promise<Chunk[]> {
     lines.push('');
   }
   
-  lines.push(`**Reloaded (${result.loaded.length}):**`);
-  lines.push(result.loaded.length > 0 ? result.loaded.join(', ') : '  (none)');
-  lines.push('');
-  
-  if (result.changed.length > 0) {
-    lines.push(`**Source changed:**`);
-    lines.push(result.changed.join(', '));
+  if (force) {
+    lines.push(`**Reloaded (${result.loaded.length}):**`);
+    lines.push(result.loaded.length > 0 ? result.loaded.join(', ') : '  (none)');
     lines.push('');
+  } else if (result.changed.length === 0 && result.newAgents.length === 0 && result.skipped.length === 0) {
+    lines.push('No agents had source changes.');
+    lines.push('');
+  } else {
+    if (result.changed.length > 0) {
+      lines.push(`**Source changed:**`);
+      lines.push(result.changed.join(', '));
+      lines.push('');
+    }
   }
   
   if (result.newAgents.length > 0) {
