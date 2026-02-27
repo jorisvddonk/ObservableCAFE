@@ -22,11 +22,11 @@
  */
 
 import { Subject, Observable, merge, EMPTY, from, type ObservableInput, Subscription } from 'rxjs';
-import { filter, map, mergeMap, catchError, tap, type OperatorFunction } from 'rxjs/operators';
+import { filter, map, mergeMap, catchError, tap, debounceTime, type OperatorFunction } from 'rxjs/operators';
 import type { Chunk, Evaluator } from './chunk.js';
 
 export { Subject, Observable, merge, EMPTY, from, Subscription };
-export { filter, map, mergeMap, catchError, tap };
+export { filter, map, mergeMap, catchError, tap, debounceTime };
 export type { OperatorFunction };
 
 export type ChunkSubject = Subject<Chunk>;

@@ -42,7 +42,7 @@ import {
   type Chunk,
   type Evaluator 
 } from './lib/chunk.js';
-import { Subject, Observable, merge, EMPTY, from, filter, map, mergeMap, catchError, tap } from './lib/stream.js';
+import { Subject, Observable, merge, EMPTY, from, filter, map, mergeMap, catchError, tap, debounceTime } from './lib/stream.js';
 import { KoboldEvaluator } from './lib/kobold-api.js';
 import { OllamaEvaluator } from './lib/ollama-api.js';
 import { 
@@ -144,7 +144,6 @@ export interface Session {
 }
 
 const sessions = new Map<string, Session>();
-const persistDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let sessionStore: SessionStore | null = null;
 let coreConfig: CoreConfig | null = null;
 
@@ -310,76 +309,67 @@ export async function createSession(
   
   session._agentContext = agentContext;
   
-  outputStream.subscribe({
-    next: (chunk) => {
-      // Check for session naming annotation
-      if (chunk.annotations && chunk.annotations['session.name']) {
-        session.displayName = String(chunk.annotations['session.name']);
-        console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
-      }
-      
-      // Check for runtime config chunk
-      if (chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime') {
-        session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
-        console.log(`[Core] Session ${session.id} runtime config updated:`, session.runtimeConfig);
-        
-        // Update session with extracted config
-        if (session.runtimeConfig.backend) {
-          session.backend = session.runtimeConfig.backend;
-        }
-        if (session.runtimeConfig.model) {
-          session.model = session.runtimeConfig.model;
-        }
-        if (session.runtimeConfig.systemPrompt) {
-          session.systemPrompt = session.runtimeConfig.systemPrompt;
-        }
-        
-        // Recreate evaluator whenever backend, model, or llmParams changes
-        session.llmEvaluator = createEvaluator(
-          session.backend,
-          config,
-          session.model,
-          session.runtimeConfig.llmParams
-        );
-      }
-      
-      const existingIndex = session.history.findIndex(c => c.id === chunk.id);
-      if (existingIndex !== -1) {
-        //console.log(`[Core] Updating history chunk: ${chunk.id} (session ${session.id})`);
-        session.history[existingIndex] = chunk;
-      } else {
-        //console.log(`[Core] Adding new history chunk: ${chunk.id} (session ${session.id})`);
-        session.history.push(chunk);
-        
-        // Debounced auto-persistence
-        if (sessionStore && session.persistsState !== false) {
-          if (persistDebounceTimers.has(id)) {
-            clearTimeout(persistDebounceTimers.get(id));
-          }
-          persistDebounceTimers.set(id, setTimeout(async () => {
-            try {
-              await sessionStore!.saveHistory(id, session.history);
-              await sessionStore!.saveSession(id, agentId, isBackground, {});
-            } catch (err) {
-              console.error(`[Core] Failed to persist session ${id}:`, err);
-            }
-          }, 500));
-        }
-      }
-    }
-  });
+  // Unified stream pipeline: forward input→output, then handle output→history
+  const historyTrigger = new Subject<void>();
   
-  // Pass user messages and metadata from inputStream to outputStream for history
-  inputStream.subscribe({
-    next: (chunk) => {
-      const role = chunk.annotations['chat.role'];
-      const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
-      const isSessionName = !!chunk.annotations['session.name'];
-      const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime';
-      
-      if ((chunk.contentType === 'text' || chunk.contentType === 'null') && 
-          (role === 'user' || role === 'system' || isWeb || isSessionName || isRuntimeConfig)) {
-        outputStream.next(chunk);
+  merge(
+    inputStream.pipe(
+      filter(chunk => {
+        const role = chunk.annotations['chat.role'];
+        const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
+        const isSessionName = !!chunk.annotations['session.name'];
+        const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime';
+        return (chunk.contentType === 'text' || chunk.contentType === 'null') && 
+               (role === 'user' || role === 'system' || isWeb || isSessionName || isRuntimeConfig);
+      }),
+      tap(chunk => outputStream.next(chunk))
+    ),
+    outputStream.pipe(
+      tap(chunk => {
+        // Check for session naming annotation
+        if (chunk.annotations?.['session.name']) {
+          session.displayName = String(chunk.annotations['session.name']);
+          console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
+        }
+        
+        // Check for runtime config chunk
+        if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
+          session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
+          console.log(`[Core] Session ${session.id} runtime config updated:`, session.runtimeConfig);
+          
+          if (session.runtimeConfig.backend) session.backend = session.runtimeConfig.backend;
+          if (session.runtimeConfig.model) session.model = session.runtimeConfig.model;
+          if (session.runtimeConfig.systemPrompt) session.systemPrompt = session.runtimeConfig.systemPrompt;
+          
+          session.llmEvaluator = createEvaluator(
+            session.backend,
+            config,
+            session.model,
+            session.runtimeConfig.llmParams
+          );
+        }
+        
+        // Update history
+        const existingIndex = session.history.findIndex(c => c.id === chunk.id);
+        if (existingIndex !== -1) {
+          session.history[existingIndex] = chunk;
+        } else {
+          session.history.push(chunk);
+          historyTrigger.next();
+        }
+      })
+    )
+  ).pipe(
+    debounceTime(500)
+  ).subscribe({
+    next: async () => {
+      if (sessionStore && session.persistsState !== false) {
+        try {
+          await sessionStore.saveHistory(id, session.history);
+          await sessionStore.saveSession(id, agentId, isBackground, {});
+        } catch (err) {
+          console.error(`[Core] Failed to persist session ${id}:`, err);
+        }
       }
     }
   });
@@ -402,11 +392,6 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   const session = sessions.get(sessionId);
   if (session?.pipelineSubscription) {
     session.pipelineSubscription.unsubscribe();
-  }
-  
-  if (persistDebounceTimers.has(sessionId)) {
-    clearTimeout(persistDebounceTimers.get(sessionId));
-    persistDebounceTimers.delete(sessionId);
   }
   
   if (sessionStore) {
