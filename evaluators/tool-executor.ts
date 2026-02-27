@@ -13,7 +13,7 @@ export function executeTools() {
 
   return (chunk: Chunk): Observable<Chunk> => {
     return new Observable(subscriber => {
-      const toolDetection = chunk.annotations['com.rxcafe.tool-detection'];
+      const toolDetection = chunk.annotations?.['com.rxcafe.tool-detection'];
       
       if (!toolDetection?.hasToolCalls) {
         subscriber.next(chunk);
