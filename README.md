@@ -143,6 +143,25 @@ export ObservableCAFE_AGENT_SEARCH_PATHS="/path/to/my/agents:/opt/custom-agents"
 bun start
 ```
 
+### Agent Reloading
+
+Agents can be reloaded at runtime using the System agent:
+
+- `!reload` - Intelligently reloads only agents whose source code has changed (detected via file hash). Existing sessions are re-initialized to use the new code.
+- `!reload-force` - Force reloads all agents (or specific ones if listed).
+
+Agents can opt-out of reloading by setting `allowsReload: false` in their definition. This is useful for agents that maintain in-memory state (like `anki`):
+
+```typescript
+export const myAgent: AgentDefinition = {
+  name: 'my-stateful-agent',
+  allowsReload: false,  // Prevents reload - preserves in-memory state
+  async initialize(session) {
+    // Agent maintains state in memory...
+  }
+};
+```
+
 ## API Endpoints
 
 ### Sessions
@@ -156,6 +175,42 @@ bun start
 - `GET /api/session/:sessionId/stream` - Persistent SSE stream for all session activity.
 - `POST /api/session/:id/chunk` - Add a generic chunk (text, binary, or null).
 - `POST /api/session/:id/web` - Fetch web content as untrusted chunk.
+
+### System Agent (Admin-only)
+
+The System agent provides administrative operations via the API. Session ID: `system`. Requires an admin token.
+
+```bash
+# Example: Reload agents
+curl -X POST http://localhost:3000/api/system/command \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{"command": "!reload"}'
+```
+
+#### Commands
+
+| Command | Description |
+|---------|-------------|
+| `!tokens` | List all API tokens |
+| `!token-create [desc] [--admin]` | Create new token |
+| `!token-revoke <id>` | Revoke a token |
+| `!token-admin <id>` | Toggle admin status |
+| `!telegram-users` | List trusted Telegram users |
+| `!telegram-trust <id\|username> [desc]` | Trust a Telegram user |
+| `!telegram-untrust <id\|username>` | Untrust a Telegram user |
+| `!sessions` | List all active sessions |
+| `!session-kill <id>` | Delete a session |
+| `!agents` | List connected agents |
+| `!agent-kick <id>` | Unregister an agent |
+| `!status` | Show system health summary |
+| `!reload [agents...]` | Reload agents with source changes |
+| `!reload-force [agents...]` | Force reload all (or specific) agents |
+| `!help` | Show available commands |
+
+The `!reload` command intelligently reloads only agents whose source code has actually changed (detected via file hash). It also re-initializes existing sessions so they use the new code. Agents with `allowsReload: false` (like `anki`) preserve their state - new sessions get the updated code, existing sessions keep the old instance.
+
+Use `!reload-force` to reload all agents regardless of whether their source changed.
 
 ## Environment Variables
 
