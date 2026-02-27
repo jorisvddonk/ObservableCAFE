@@ -1324,11 +1324,7 @@ async function handleGetHistory(sessionId: string): Promise<Response> {
     });
   }
   
-  const historyChunks = session.history.filter(c => 
-    c.contentType === 'text' || 
-    c.contentType === 'binary' || 
-    (c.contentType === 'null' && (c.annotations['session.name'] || c.annotations['config.type'] === 'runtime'))
-  );
+  const historyChunks = session.history;
   
   return new Response(JSON.stringify({ 
     sessionId,
