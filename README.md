@@ -2,6 +2,17 @@
 
 A reactive chat application built with the ObservableCAFE architecture pattern, using Bun.js. Supports both KoboldCPP and Ollama LLM backends with advanced session management, background agents, and multi-modal support.
 
+## Screenshots
+
+![alt text](docs/assets/image-2.png)
+
+![alt text](docs/assets/image-1.png)
+
+![alt text](docs/assets/image-3.png)
+
+![alt text](docs/assets/image.png)
+
+
 ## Philosophy
 
 ObservableCAFE takes a minimalist approach to LLM-powered agents. The core premise is that LLMs should do as little as possible within the agentic loop—instead of iteratively reasoning and acting, they should provide their entire plan (as code) upfront.
