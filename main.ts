@@ -1642,17 +1642,33 @@ function handleSessionStream(sessionId: string): Response {
       // Send initial connection message
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected', sessionId })}\n\n`));
       
-      // Subscribe to output stream
+       // Subscribe to output stream
       const outputSub = session!.outputStream.subscribe({
         next: (chunk: Chunk) => {
           if (chunk.contentType === 'text' || chunk.contentType === 'binary') {
             try {
+              // Handle binary chunk serialization
+              let serializedChunk = chunk;
+              if (chunk.contentType === 'binary') {
+                serializedChunk = {
+                  ...chunk,
+                  content: {
+                    ...chunk.content,
+                    data: Array.from((chunk.content as any).data)
+                  }
+                };
+              }
+              
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                 type: 'chunk',
-                chunk: chunk
+                chunk: serializedChunk
               })}\n\n`));
-            } catch {
-              // Controller may be closed if the client disconnected
+            } catch (error) {
+              console.error('[SSE] Failed to serialize chunk:', chunk.id, error);
+              console.error('[SSE] Chunk type:', chunk.contentType);
+              console.error('[SSE] Chunk data preview:', JSON.stringify(chunk, (k, v) => 
+                k === 'data' && typeof v === 'object' ? `Uint8Array(${v.length})` : v
+              ));
             }
           }
         },

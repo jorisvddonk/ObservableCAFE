@@ -763,7 +763,7 @@ class RXCafeChat {
                         return;
                     }
 
-                    console.log(`[RXCAFE] New chunk from stream, rendering:`, chunk.id, chunk.content?.slice?.(0, 60));
+                    console.log(`[RXCAFE] New chunk from stream, rendering:`, chunk.id, chunk.contentType, chunk.content?.mimeType);
                     this.addRawChunk(chunk);
                     this.renderChunk(chunk);
                     this.updateInspector();
@@ -820,9 +820,12 @@ class RXCafeChat {
         
         if (chunk.contentType === 'binary') {
             const mimeType = chunk.content?.mimeType || '';
+            console.log(`[RXCAFE] Rendering binary chunk, mimeType: ${mimeType}, role: ${role}`);
             if (mimeType.startsWith('image/')) {
+                console.log('[RXCAFE] Calling addImageMessage');
                 this.addImageMessage(role || 'assistant', chunk);
             } else if (mimeType.startsWith('audio/')) {
+                console.log('[RXCAFE] Calling addAudioMessage');
                 this.addAudioMessage(role || 'assistant', chunk);
             } else {
                 console.warn('[RXCAFE] Unsupported binary chunk', chunk);
@@ -1826,6 +1829,7 @@ class RXCafeChat {
 
         const blob = new Blob([uint8], { type: mimeType });
         const url = URL.createObjectURL(blob);
+        console.log(`[RXCAFE] Created audio blob URL: ${url} (size: ${blob.size} bytes, type: ${mimeType})`);
         
         const messageEl = document.createElement('div');
         this._elCounter++;
@@ -1841,6 +1845,11 @@ class RXCafeChat {
         audio.controls = true;
         audio.style.width = '100%';
         audio.style.display = 'block';
+        
+        // Debug audio element
+        audio.onload = () => console.log('[RXCAFE] Audio loaded');
+        audio.onerror = (e) => console.error('[RXCAFE] Audio error:', e);
+        audio.onloadedmetadata = (e) => console.log('[RXCAFE] Audio metadata:', e.target.duration, 'seconds');
         
         contentEl.appendChild(audio);
         

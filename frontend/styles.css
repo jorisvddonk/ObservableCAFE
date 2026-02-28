@@ -501,6 +501,33 @@ body {
     gap: 0.5rem;
 }
 
+/* Audio message specific styles */
+.message.audio-message audio {
+    max-width: 100%;
+    border-radius: 0.5rem;
+    display: block !important;
+    min-height: 40px;
+    background-color: transparent;
+}
+
+/* User audio message styles to ensure visibility on blue background */
+.message.user.audio-message audio {
+    min-height: 50px;
+}
+
+/* Ensure audio messages are properly aligned */
+.message.user.audio-message {
+    align-self: flex-end !important;
+    margin-left: auto !important;
+    min-width: 200px;
+}
+
+.message.assistant.audio-message {
+    align-self: flex-start !important;
+    margin-right: auto !important;
+    min-width: 200px;
+}
+
 .message-content { white-space: pre-wrap; word-wrap: break-word; line-height: 1.5; }
 
 /* Input Area */
