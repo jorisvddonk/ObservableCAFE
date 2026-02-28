@@ -15,16 +15,14 @@ const DEFAULT_CONFIG: HandyTranscriptionConfig = {
 };
 
 /**
- * Creates an evaluator that transcribes audio chunks using Handy's local API.
- * 
- * Handy is a free, open source, offline speech-to-text application that supports
- * both Whisper and Parakeet models. The local API must be enabled in Handy's settings.
+ * Mode 1: Adds transcription annotation to the input chunk.
+ * The chunk passes through with an added 'transcription.text' annotation.
  * 
  * @param session Agent session context
  * @param config Optional configuration for the transcription service
- * @returns Function that takes an audio chunk and returns an Observable of transcribed text chunks
+ * @returns Function that takes an audio chunk and returns an Observable of the annotated chunk
  */
-export function transcribeAudio(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
+export function transcribeAndAnnotate(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   const apiUrl = `${mergedConfig.baseUrl}/v1/audio/transcriptions`;
 
@@ -46,7 +44,60 @@ export function transcribeAudio(session: AgentSessionContext, config: HandyTrans
         return;
       }
 
-      // Transcribe audio
+      transcribe(binaryContent.data, binaryContent.mimeType, mergedConfig, apiUrl)
+        .then(text => {
+          // Add transcription as annotation to the original chunk
+          const annotatedChunk = annotateChunk(chunk, 'transcription.text', text);
+          const chunkWithMetadata = annotateChunk(annotatedChunk, 'com.rxcafe.handling', {
+            source: 'handy',
+            apiUrl,
+            mimeType: binaryContent.mimeType,
+            audioSize: binaryContent.data.length,
+            responseFormat: mergedConfig.responseFormat
+          });
+
+          session.outputStream.next(chunkWithMetadata);
+          subscriber.next(chunkWithMetadata);
+          subscriber.complete();
+        })
+        .catch(error => {
+          session.errorStream.next(error);
+          subscriber.error(error);
+        });
+    });
+  };
+}
+
+/**
+ * Mode 2: Creates a new agent/assistant chunk with the transcription text.
+ * This is the original behavior - creates a new assistant chunk.
+ * 
+ * @param session Agent session context
+ * @param config Optional configuration for the transcription service
+ * @returns Function that takes an audio chunk and returns an Observable of the transcribed text chunk
+ */
+export function transcribeToAssistantChunk(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+  const apiUrl = `${mergedConfig.baseUrl}/v1/audio/transcriptions`;
+
+  return (chunk: Chunk): Observable<Chunk> => {
+    return new Observable(subscriber => {
+      // Only process binary audio chunks
+      if (chunk.contentType !== 'binary') {
+        subscriber.next(chunk);
+        subscriber.complete();
+        return;
+      }
+
+      const binaryContent = chunk.content as { data: Uint8Array; mimeType: string };
+
+      // Check if content is audio
+      if (!binaryContent.mimeType.startsWith('audio/')) {
+        subscriber.next(chunk);
+        subscriber.complete();
+        return;
+      }
+
       transcribe(binaryContent.data, binaryContent.mimeType, mergedConfig, apiUrl)
         .then(text => {
           // Create text chunk with transcription
@@ -74,6 +125,75 @@ export function transcribeAudio(session: AgentSessionContext, config: HandyTrans
         });
     });
   };
+}
+
+/**
+ * Mode 3: Creates a new user chunk with the transcription text.
+ * Useful when you want the transcription to appear as user input.
+ * 
+ * @param session Agent session context
+ * @param config Optional configuration for the transcription service
+ * @returns Function that takes an audio chunk and returns an Observable of the transcribed text chunk
+ */
+export function transcribeToUserChunk(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config };
+  const apiUrl = `${mergedConfig.baseUrl}/v1/audio/transcriptions`;
+
+  return (chunk: Chunk): Observable<Chunk> => {
+    return new Observable(subscriber => {
+      // Only process binary audio chunks
+      if (chunk.contentType !== 'binary') {
+        subscriber.next(chunk);
+        subscriber.complete();
+        return;
+      }
+
+      const binaryContent = chunk.content as { data: Uint8Array; mimeType: string };
+
+      // Check if content is audio
+      if (!binaryContent.mimeType.startsWith('audio/')) {
+        subscriber.next(chunk);
+        subscriber.complete();
+        return;
+      }
+
+      transcribe(binaryContent.data, binaryContent.mimeType, mergedConfig, apiUrl)
+        .then(text => {
+          // Create text chunk with transcription
+          const transcribedChunk = createTextChunk(text, 'com.rxcafe.handy-transcriber');
+          
+          // Add annotations with transcription metadata
+          const annotatedChunk = annotateChunk(transcribedChunk, 'com.rxcafe.handling', {
+            source: 'handy',
+            apiUrl,
+            mimeType: binaryContent.mimeType,
+            audioSize: binaryContent.data.length,
+            responseFormat: mergedConfig.responseFormat
+          });
+
+          // Set chat role to user
+          const chunkWithRole = annotateChunk(annotatedChunk, 'chat.role', 'user');
+
+          session.outputStream.next(chunkWithRole);
+          subscriber.next(chunkWithRole);
+          subscriber.complete();
+        })
+        .catch(error => {
+          session.errorStream.next(error);
+          subscriber.error(error);
+        });
+    });
+  };
+}
+
+/**
+ * Legacy export for backward compatibility.
+ * Equivalent to transcribeToAssistantChunk.
+ * 
+ * @deprecated Use transcribeToAssistantChunk instead
+ */
+export function transcribeAudio(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
+  return transcribeToAssistantChunk(session, config);
 }
 
 /**
