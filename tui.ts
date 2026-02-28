@@ -161,7 +161,7 @@ class ChatApp implements Component, Focusable {
       }
       
       this.addMessage('system', `Connected to ${SERVER_URL}`);
-      this.addMessage('system', 'Commands: /clear, /sessions, /new, /quit');
+      this.addMessage('system', 'Type /help for commands');
     } catch (err: any) {
       this.addMessage('system', `Failed to connect: ${err.message}`);
       this.addMessage('system', 'Start server with: bun start');
@@ -487,6 +487,20 @@ class ChatApp implements Component, Focusable {
       return;
     }
     
+    if (trimmed === '/help' || trimmed === '/?') {
+      this.addMessage('system', '--- Commands ---');
+      this.addMessage('system', '/help, /?    - Show this help');
+      this.addMessage('system', '/sessions    - Switch sessions');
+      this.addMessage('system', '/new        - Create new session');
+      this.addMessage('system', '/clear      - Clear messages');
+      this.addMessage('system', '/rename <n> - Rename session');
+      this.addMessage('system', '/delete     - Delete session');
+      this.addMessage('system', '/system <p> - Set system prompt');
+      this.addMessage('system', '/quit, /exit - Exit');
+      this.addMessage('system', '//<cmd>     - Forward to agent (e.g. //help sends /help)');
+      return;
+    }
+    
     if (trimmed === '/sessions') {
       this.setMode('sessions');
       return;
@@ -513,6 +527,13 @@ class ChatApp implements Component, Focusable {
     
     if (trimmed === '/delete') {
       this.deleteCurrentSession();
+      return;
+    }
+    
+    if (trimmed.startsWith('//')) {
+      const agentMessage = trimmed.slice(1);
+      this.addMessage('user', agentMessage);
+      this.sendMessage(agentMessage);
       return;
     }
     
