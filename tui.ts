@@ -161,11 +161,11 @@ class ChatApp implements Component, Focusable {
         await this.createSession('default');
       }
       
-      this.addMessage('system', `Connected to ${SERVER_URL}`);
-      this.addMessage('system', 'Type /help for commands');
+      this.addMessage('tui', `Connected to ${SERVER_URL}`);
+      this.addMessage('tui', 'Type /help for commands');
     } catch (err: any) {
-      this.addMessage('system', `Failed to connect: ${err.message}`);
-      this.addMessage('system', 'Start server with: bun start');
+      this.addMessage('tui', `Failed to connect: ${err.message}`);
+      this.addMessage('tui', 'Start server with: bun start');
     }
     
     this.tui.requestRender();
@@ -250,7 +250,7 @@ class ChatApp implements Component, Focusable {
       this.streamReader = null;
     } catch (err: any) {
       if (this.streamRunning) {
-        this.addMessage('system', `Stream error: ${err.message}, reconnecting...`);
+        this.addMessage('tui', `Stream error: ${err.message}, reconnecting...`);
         setTimeout(() => this.connectStream(), 2000);
       }
     }
@@ -276,7 +276,7 @@ class ChatApp implements Component, Focusable {
               const mimeType = data.chunk.annotations?.['image.mime-type'] || data.chunk.annotations?.['audio.mime-type'];
               const desc = data.chunk.annotations?.['image.description'] || data.chunk.annotations?.['audio.description'] || 'attachment';
               const label = mimeType ? `${mimeType}: ${desc}` : desc;
-              this.addMessage('system', `[${label} - not displayed in TUI]`);
+              this.addMessage('tui', `[${label} - not displayed in TUI]`);
               this.loading = false;
               this.loader.stop();
               this.tui.requestRender();
@@ -290,7 +290,7 @@ class ChatApp implements Component, Focusable {
         }
         break;
       case 'error':
-        this.addMessage('system', `Error: ${data.error}`);
+        this.addMessage('tui', `Error: ${data.error}`);
         this.loading = false;
         this.loader.stop();
         this.tui.requestRender();
@@ -393,7 +393,7 @@ class ChatApp implements Component, Focusable {
       for (const chunk of history) {
         if (chunk.contentType === 'text' && typeof chunk.content === 'string') {
           const role = chunk.annotations['chat.role'];
-          if (role === 'user' || role === 'assistant' || role === 'system') {
+          if (role === 'user' || role === 'assistant' || role === 'tui') {
             this.addMessage(role, chunk.content);
           }
         }
@@ -404,12 +404,12 @@ class ChatApp implements Component, Focusable {
         this.agentName = sessionInfo.agentName;
       }
     } catch (err: any) {
-      this.addMessage('system', `Failed to load history: ${err.message}`);
+      this.addMessage('tui', `Failed to load history: ${err.message}`);
     }
     
     this.updateHeader();
     this.connectStream();
-    this.addMessage('system', `Switched to session`);
+    this.addMessage('tui', `Switched to session`);
     this.tui.requestRender();
   }
   
@@ -433,7 +433,7 @@ class ChatApp implements Component, Focusable {
       await this.switchToSession(result.id);
       this.setMode('chat');
     } catch (err: any) {
-      this.addMessage('system', `Failed to create session: ${err.message}`);
+      this.addMessage('tui', `Failed to create session: ${err.message}`);
     }
   }
   
@@ -452,7 +452,7 @@ class ChatApp implements Component, Focusable {
         await this.createSession('default');
       }
     } catch (err: any) {
-      this.addMessage('system', `Failed to delete: ${err.message}`);
+      this.addMessage('tui', `Failed to delete: ${err.message}`);
     }
     
     this.setMode('chat');
@@ -493,21 +493,21 @@ class ChatApp implements Component, Focusable {
     
     if (trimmed === '/clear') {
       this.messages = [];
-      this.addMessage('system', 'History cleared.');
+      this.addMessage('tui', 'History cleared.');
       return;
     }
     
     if (trimmed === '/help' || trimmed === '/?') {
-      this.addMessage('system', '--- Commands ---');
-      this.addMessage('system', '/help, /?    - Show this help');
-      this.addMessage('system', '/sessions    - Switch sessions');
-      this.addMessage('system', '/new        - Create new session');
-      this.addMessage('system', '/clear      - Clear messages');
-      this.addMessage('system', '/rename <n> - Rename session');
-      this.addMessage('system', '/delete     - Delete session');
-      this.addMessage('system', '/system <p> - Set system prompt');
-      this.addMessage('system', '/quit, /exit - Exit');
-      this.addMessage('system', '//<cmd>     - Forward to agent (e.g. //help sends /help)');
+      this.addMessage('tui', '--- Commands ---');
+      this.addMessage('tui', '/help, /?    - Show this help');
+      this.addMessage('tui', '/sessions    - Switch sessions');
+      this.addMessage('tui', '/new        - Create new session');
+      this.addMessage('tui', '/clear      - Clear messages');
+      this.addMessage('tui', '/rename <n> - Rename session');
+      this.addMessage('tui', '/delete     - Delete session');
+      this.addMessage('tui', '/system <p> - Set system prompt');
+      this.addMessage('tui', '/quit, /exit - Exit');
+      this.addMessage('tui', '//<cmd>     - Forward to agent (e.g. //help sends /help)');
       return;
     }
     
@@ -523,15 +523,15 @@ class ChatApp implements Component, Focusable {
     
     if (trimmed.startsWith('/system ')) {
       const promptText = trimmed.slice(8);
-      this.sendChunk(promptText, 'system');
-      this.addMessage('system', `System prompt set: ${promptText.substring(0, 50)}...`);
+      this.sendChunk(promptText, 'tui');
+      this.addMessage('tui', `System prompt set: ${promptText.substring(0, 50)}...`);
       return;
     }
     
     if (trimmed.startsWith('/rename ')) {
       const newName = trimmed.slice(8);
       this.sendChunk(newName, 'session-name', true);
-      this.addMessage('system', `Session renamed to: ${newName}`);
+      this.addMessage('tui', `Session renamed to: ${newName}`);
       return;
     }
     
@@ -562,14 +562,14 @@ class ChatApp implements Component, Focusable {
           contentType: isNull ? 'null' : 'text',
           producer: 'com.rxcafe.user',
           annotations: {
-            'chat.role': annotation === 'system' ? 'system' : undefined,
+            'chat.role': annotation === 'tui' ? 'tui' : undefined,
             'session.name': annotation === 'session-name' ? content : undefined,
-            [annotation]: annotation === 'system' ? true : undefined
+            [annotation]: annotation === 'tui' ? true : undefined
           }
         })
       });
     } catch (err: any) {
-      this.addMessage('system', `Error: ${err.message}`);
+      this.addMessage('tui', `Error: ${err.message}`);
     }
   }
   
@@ -598,7 +598,7 @@ class ChatApp implements Component, Focusable {
       }
       
     } catch (err: any) {
-      this.addMessage('system', `Error: ${err.message}`);
+      this.addMessage('tui', `Error: ${err.message}`);
       this.loading = false;
       this.loader.stop();
       this.tui.requestRender();
