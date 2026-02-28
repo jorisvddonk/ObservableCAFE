@@ -8,9 +8,12 @@
     "start": "bun run main.ts",
     "dev": "bun --hot run main.ts",
     "cli": "bun run cli.ts",
-    "test": "bun run test.ts"
+    "tui": "bun run tui.ts",
+    "test": "bun run test.ts",
+    "test-tools": "bun run test-tools.js"
   },
   "dependencies": {
+    "@mariozechner/pi-tui": "^0.55.3",
     "ajv": "^8.18.0",
     "fflate": "^0.8.2",
     "rxjs": "^7.8.1",
