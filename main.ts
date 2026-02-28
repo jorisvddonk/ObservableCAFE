@@ -26,6 +26,7 @@ import { fileURLToPath } from 'url';
 import {
   createTextChunk,
   createNullChunk,
+  createBinaryChunk,
   type Chunk
 } from './lib/chunk.js';
 import { connectedAgentStore, type ConnectedAgent } from './lib/connected-agents.js';
@@ -2137,22 +2138,83 @@ const server = serve({
       return addCors(response, corsHeaders);
     }
     
-    if (pathname.match(/^\/api\/chat\/[^/]+$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const body = await request.json();
-      const message = body.message;
-      
-      if (!message || typeof message !== 'string') {
-        return new Response(JSON.stringify({ error: 'Message required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-      
-      const { isAdmin } = verifyAdmin(request);
-      const response = await handleChatStream(sessionId, message, isAdmin);
-      return addCors(response, corsHeaders);
-    }
+     if (pathname.match(/^\/api\/chat\/[^/]+$/) && request.method === 'POST') {
+       const sessionId = pathname.split('/')[3];
+       const body = await request.json();
+       
+       // Handle audio messages
+       if (body.audio) {
+         const session = getSession(sessionId);
+         if (!session) {
+           return new Response(JSON.stringify({ error: 'Session not found' }), {
+             status: 404,
+             headers: { 'Content-Type': 'application/json', ...corsHeaders }
+           });
+         }
+         
+         const { data, mimeType, duration } = body.audio;
+         if (!data || !mimeType) {
+           return new Response(JSON.stringify({ error: 'Audio data and MIME type required' }), {
+             status: 400,
+             headers: { 'Content-Type': 'application/json', ...corsHeaders }
+           });
+         }
+         
+         // Convert audio data to Uint8Array
+         let audioUint8;
+         if (Array.isArray(data)) {
+           audioUint8 = new Uint8Array(data);
+         } else if (typeof data === 'object' && data !== null) {
+           if (data.type === 'Buffer' && Array.isArray(data.data)) {
+             audioUint8 = new Uint8Array(data.data);
+           } else {
+             audioUint8 = new Uint8Array(Object.values(data));
+           }
+         } else {
+           return new Response(JSON.stringify({ error: 'Invalid audio data format' }), {
+             status: 400,
+             headers: { 'Content-Type': 'application/json', ...corsHeaders }
+           });
+         }
+         
+         // Create binary chunk for audio
+         const audioChunk = createBinaryChunk(
+           audioUint8,
+           mimeType,
+           'com.rxcafe.user',
+           {
+             'chat.role': 'user',
+             'audio.duration': duration,
+             'client.type': 'web',
+             'admin.authorized': verifyAdmin(request).isAdmin
+           }
+         );
+         
+         // Send audio chunk to session input stream
+         session.inputStream.next(audioChunk);
+         
+         // Return success response
+         return new Response(JSON.stringify({
+           success: true,
+           chunk: audioChunk
+         }), {
+           headers: { 'Content-Type': 'application/json', ...corsHeaders }
+         });
+       }
+       
+       // Handle text messages
+       const message = body.message;
+       if (!message || typeof message !== 'string') {
+         return new Response(JSON.stringify({ error: 'Message or audio required' }), {
+           status: 400,
+           headers: { 'Content-Type': 'application/json', ...corsHeaders }
+         });
+       }
+       
+       const { isAdmin } = verifyAdmin(request);
+       const response = await handleChatStream(sessionId, message, isAdmin);
+       return addCors(response, corsHeaders);
+     }
     
     if (pathname.match(/^\/api\/chat\/[^/]+\/abort$/) && request.method === 'POST') {
       const sessionId = pathname.split('/')[3];
