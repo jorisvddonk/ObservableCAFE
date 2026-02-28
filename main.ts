@@ -10,6 +10,7 @@
  * 
  * Usage:
  *   bun start                                          # Start server
+ *   bun start -- --help                                # Show help
  *   bun start -- --trust <token>                       # Trust a new API client
  *   bun start -- --list-clients                        # List trusted API clients
  *   bun start -- --revoke <id>                         # Revoke a trusted API client
@@ -67,6 +68,41 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // =============================================================================
 
 const args = process.argv.slice(2);
+
+// Handle --help command
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`
+RXCAFE Chat Server
+
+Usage:
+  bun start                                          Start server
+  bun start -- --help                                Show this help message
+
+Client Management:
+  bun start -- --generate-token [desc]              Generate new API token
+  bun start -- --generate-token [desc] --admin      Generate admin API token
+  bun start -- --trust <token> [desc]               Trust an API token
+  bun start -- --list-clients                        List trusted API clients
+  bun start -- --revoke <id>                         Revoke a trusted client
+  bun start -- --token-admin <id>                    Toggle admin status for client
+
+Telegram Users:
+  bun start -- --trust-telegram <id|username> [desc]  Trust Telegram user
+  bun start -- --untrust-telegram <id|username>       Untrust Telegram user
+  bun start -- --list-telegram-users                   List trusted Telegram users
+
+Environment Variables:
+  PORT                       Server port (default: 3000)
+  TELEGRAM_TOKEN             Telegram bot token
+  TELEGRAM_WEBHOOK_URL       Telegram webhook URL
+  TRUST_DB_PATH              Path to trust database
+  KOBOLD_URL                 KoboldCPP base URL
+  OLLAMA_URL                 Ollama base URL
+  OLLAMA_MODEL               Ollama model name
+  BACKEND                    Default backend (kobold or ollama)
+`);
+  process.exit(0);
+}
 
 // Handle --trust command (add new client)
 const trustIndex = args.indexOf('--trust');
