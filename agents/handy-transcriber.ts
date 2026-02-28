@@ -1,7 +1,8 @@
 import type { AgentDefinition, AgentSessionContext } from '../lib/agent.js';
 import { createTextChunk } from '../lib/chunk.js';
-import { filter } from '../lib/stream.js';
+import { filter, mergeMap } from '../lib/stream.js';
 import { transcribeAudio, HandyTranscriptionConfig } from '../evaluators/handy-transcriber.js';
+import { convertToMp3 } from '../evaluators/audio-converter.js';
 
 /**
  * Handy Transcriber Agent
@@ -46,8 +47,16 @@ export const handyTranscriberAgent: AgentDefinition = {
       timestampGranularities: session.sessionConfig['config.handy_timestampGranularities'] || []
     };
 
-     const sub = session.inputStream.pipe(
+    // Create audio converter
+    const audioConverter = convertToMp3({
+      targetFormat: 'mp3',
+      targetMimeType: 'audio/mpeg'
+    });
+
+    const sub = session.inputStream.pipe(
       filter(c => c.contentType === 'binary' && (c.content as any).mimeType?.startsWith('audio/')),
+      // Convert audio to MP3 before transcription
+      mergeMap(chunk => audioConverter(chunk))
     ).subscribe({
       next: chunk => {
         // Use the transcription evaluator
