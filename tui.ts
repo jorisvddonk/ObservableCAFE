@@ -388,7 +388,8 @@ class ChatApp implements Component, Focusable {
     this.input.setValue("");
     
     try {
-      const history = await this.api<Chunk[]>(`/api/session/${sessionId}/history`);
+      const historyResp = await this.api<{ chunks: Chunk[] }>(`/api/session/${sessionId}/history`);
+      const history = historyResp.chunks || [];
       for (const chunk of history) {
         if (chunk.contentType === 'text' && typeof chunk.content === 'string') {
           const role = chunk.annotations['chat.role'];
