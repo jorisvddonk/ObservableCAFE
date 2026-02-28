@@ -57,7 +57,8 @@ Agents are declarative by nature—they say *what* should happen to data, not *h
    - **Tool System**: Agents can call tools using `<|tool_call|>` syntax
      - **Die Roller**: `rollDice` tool for rolling virtual dice (1d6, 2d10+3, etc.)
      - **Tool Detection**: Auto-detects and executes tool calls in LLM responses
-- **Multi-modal Support**: Handle text and **binary chunks** seamlessly.
+   - **Voice Chat Agent** (`voice-chat`): Advanced multi-modal agent that accepts **both text and audio input**. Audio is automatically transcribed using [Handy](https://handy.computer/) (local speech-to-text) and processed through the LLM, enabling hands-free voice conversations. Audio is converted to MP3 on-the-fly for compatibility.
+ - **Multi-modal Support**: Handle text and **binary chunks** seamlessly.
   - **Image Painter**: Generates and renders random pixel art images.
   - **Audio Generator**: Generates and plays back audio tones.
   - **Telegram Media**: Images and audio are delivered directly as photos and voice messages.
@@ -108,12 +109,14 @@ This app implements the ObservableCAFE pattern:
    bun start -- --trust-telegram <your_username_or_id>
    ```
 
-4. **Run the server**:
+4. **(Optional) Configure Voice Chat**: For voice input support, install and run [Handy](https://handy.computer/) (free, offline speech-to-text). You need a version with local API capabilities, which may be a fork (https://github.com/Yorick-Ryu/Handy/)
+
+5. **Run the server**:
    ```bash
    bun start
    ```
 
-5. **Open the app**:
+6. **Open the app**:
    Navigate to `http://localhost:3000`
 
 ## Terminal UI (TUI)
@@ -190,6 +193,41 @@ export const myAgent: AgentDefinition = {
   }
 };
 ```
+
+### Voice Chat Agent
+
+The `voice-chat` agent is an advanced multi-modal agent that seamlessly blends **text and voice input**:
+
+1. **Audio Input**: Send audio chunks (WAV, WebM, OGG, etc.) - they're automatically converted to MP3 and transcribed using [Handy](https://handy.computer/)'s local Whisper/Parakeet API
+2. **Text Input**: Regular text messages work exactly like the default agent
+3. **Unified Output**: Both input types are processed through the LLM for intelligent responses
+
+**Use Cases**:
+- Hands-free chat while driving or cooking
+- Accessibility for users who prefer voice input
+- Quick voice notes that get transcribed and processed
+
+**Creating a Voice Chat Session**:
+```bash
+curl -X POST http://localhost:3000/api/session \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{
+    "agentId": "voice-chat",
+    "backend": "ollama",
+    "model": "gemma3:1b",
+    "systemPrompt": "You are a helpful voice assistant"
+  }'
+```
+
+**Sending Audio**:
+```bash
+curl -X POST http://localhost:3000/api/session/<session-id>/chunk \
+  -H "Authorization: Bearer <your-token>" \
+  -F "file=@recording.wav"
+```
+
+The agent handles audio format conversion automatically and streams the LLM response just like text input.
 
 ## API Endpoints
 
