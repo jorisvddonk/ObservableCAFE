@@ -55,7 +55,7 @@ import {
   type AddChunkOptions,
   type CreateSessionOptions
 } from './core.js';
-import { TelegramBot, TelegramUser, TelegramConfig } from './lib/telegram.js';
+import { TelegramBot, TelegramUser, TelegramConfig, TelegramVoice, TelegramAudio } from './lib/telegram.js';
 import { Database, extractClientToken, maskToken } from './lib/database.js';
 import { SessionStore } from './lib/session-store.js';
 import type { LLMParams, RuntimeSessionConfig } from './lib/agent.js';
@@ -510,9 +510,7 @@ async function initTelegramBot(): Promise<void> {
     await telegramBot.init();
     
     // Handle incoming messages
-    telegramBot.onMessage(async (chatId, text, user) => {
-      console.log(`Telegram message from ${user.first_name} (${user.username || 'no username'}) ID:${user.id}: ${text.substring(0, 50)}...`);
-      
+    telegramBot.onMessage(async (chatId, text, user, voice, audio) => {
       // Check if user is trusted
       const isTrusted = trustDb.isTelegramUserTrusted(user.id, user.username);
       if (!isTrusted) {
@@ -527,6 +525,23 @@ async function initTelegramBot(): Promise<void> {
         );
         return;
       }
+
+      // Handle voice/audio messages
+      if (voice || audio) {
+        const audioInfo = voice || audio;
+        const duration = audioInfo?.duration || 0;
+        const mimeType = audioInfo?.mime_type || 'audio/ogg';
+        
+        console.log(`[Telegram] Voice/audio message from ${user.first_name} (${user.username || 'no username'}) ID:${user.id}, duration: ${duration}s, mimeType: ${mimeType}`);
+        
+        await handleTelegramAudioMessage(chatId, user, voice, audio);
+        return;
+      }
+
+      // Handle text messages
+      if (!text) return;
+      
+      console.log(`Telegram message from ${user.first_name} (${user.username || 'no username'}) ID:${user.id}: ${text.substring(0, 50)}...`);
       
       // Get or create session for this chat
       let sessionId = telegramCurrentSession.get(chatId);
@@ -851,6 +866,126 @@ function handleTelegramSystemCommand(chatId: number, session: Session, prompt: s
     }
   });
   telegramBot.sendMessage(chatId, `✅ System prompt set:\n\n\`${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}\``, { parseMode: 'Markdown' });
+}
+
+async function handleTelegramAudioMessage(chatId: number, user: TelegramUser, voice?: TelegramVoice, audio?: TelegramAudio): Promise<void> {
+  if (!telegramBot) return;
+
+  const audioInfo = voice || audio;
+  if (!audioInfo) return;
+
+  const duration = audioInfo.duration || 0;
+  const mimeType = audioInfo.mime_type || 'audio/ogg';
+  const fileId = audioInfo.file_id;
+
+  console.log(`[Telegram] Processing audio message, duration: ${duration}s, mimeType: ${mimeType}`);
+
+  // Send "processing" indicator
+  let statusMessage: any;
+  try {
+    statusMessage = await telegramBot.sendMessage(chatId, '🎙️ Processing audio...');
+  } catch (error) {
+    console.error('[Telegram] Failed to send status message:', error);
+  }
+
+  try {
+    // Get file path from Telegram
+    const file = await telegramBot.getFile(fileId);
+    if (!file.file_path) {
+      throw new Error('Failed to get file path from Telegram');
+    }
+
+    console.log(`[Telegram] Downloading file: ${file.file_path}`);
+
+    // Download the file
+    const audioData = await telegramBot.downloadFile(file.file_path);
+
+    console.log(`[Telegram] Downloaded ${audioData.length} bytes`);
+
+    // Get or create session for this chat
+    let sessionId = telegramCurrentSession.get(chatId);
+    if (!sessionId) {
+      const defaultTelegramSessionId = 'default-telegram';
+      console.log(`[Telegram] Ensuring default session exists: ${defaultTelegramSessionId}`);
+
+      let session = getSession(defaultTelegramSessionId);
+
+      if (!session && sessionStore) {
+        // Check if it's in the store
+        const sessionData = await sessionStore.loadSession(defaultTelegramSessionId);
+        if (sessionData) {
+          console.log(`[Telegram] Restoring default session from store`);
+          session = await createSession(config, {
+            agentId: sessionData.agentName,
+            isBackground: sessionData.isBackground,
+            sessionId: defaultTelegramSessionId,
+          });
+          if (session._agentContext) await session._agentContext.loadState();
+        }
+      }
+
+      if (!session) {
+        console.log(`[Telegram] Creating new default session`);
+        session = await createSession(config, { 
+          sessionId: defaultTelegramSessionId,
+          agentId: 'default'
+        });
+      }
+
+      sessionId = session.id;
+      telegramCurrentSession.set(chatId, sessionId);
+
+      if (!telegramAllSessions.has(chatId)) {
+        telegramAllSessions.set(chatId, new Set());
+      }
+      telegramAllSessions.get(chatId)!.add(sessionId);
+
+      console.log(`[Telegram] Using session ${sessionId} for chat ${chatId}`);
+    }
+
+    const session = getSession(sessionId);
+    if (!session) {
+      await telegramBot.sendMessage(chatId, '❌ Session error. Use /new to create a new session.');
+      telegramCurrentSession.delete(chatId);
+      return;
+    }
+
+    // Ensure we are listening to the session's outputStream
+    ensureTelegramSubscription(chatId, session);
+
+    // Create binary chunk for audio
+    const audioChunk = createBinaryChunk(
+      audioData,
+      mimeType,
+      'com.rxcafe.user',
+      {
+        'chat.role': 'user',
+        'audio.duration': duration,
+        'telegram.chatId': chatId,
+        'client.type': 'telegram',
+        'telegram.voice': !!voice,
+        'telegram.audio': !!audio
+      }
+    );
+
+    // Send audio chunk to session input stream
+    session.inputStream.next(audioChunk);
+
+    // Delete status message
+    if (statusMessage?.message_id) {
+      try {
+        await telegramBot.deleteMessage(chatId, statusMessage.message_id);
+      } catch {
+        // Ignore errors deleting status message
+      }
+    }
+
+    console.log(`[Telegram] Audio chunk sent to session ${sessionId}`);
+
+  } catch (error) {
+    console.error('[Telegram] Error processing audio:', error);
+    await telegramBot.sendMessage(chatId, `❌ Failed to process audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 async function handleTelegramMessage(chatId: number, session: Session, message: string): Promise<void> {

@@ -17,6 +17,24 @@ export interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery;
 }
 
+export interface TelegramVoice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
+export interface TelegramAudio {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  performer?: string;
+  title?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
@@ -24,6 +42,8 @@ export interface TelegramMessage {
   date: number;
   text?: string;
   entities?: TelegramMessageEntity[];
+  voice?: TelegramVoice;
+  audio?: TelegramAudio;
 }
 
 export interface TelegramCallbackQuery {
@@ -56,7 +76,7 @@ export interface TelegramMessageEntity {
   length: number;
 }
 
-export type TelegramMessageHandler = (chatId: number, text: string, user: TelegramUser) => Promise<void>;
+export type TelegramMessageHandler = (chatId: number, text: string | null, user: TelegramUser, voice?: TelegramVoice, audio?: TelegramAudio) => Promise<void>;
 export type TelegramCallbackHandler = (chatId: number, data: string, user: TelegramUser, callbackId: string) => Promise<void>;
 
 export class TelegramBot {
@@ -186,6 +206,29 @@ export class TelegramBot {
     return data.result;
   }
 
+  async getFile(fileId: string): Promise<{ file_id: string; file_unique_id: string; file_size?: number; file_path?: string }> {
+    const response = await fetch(`${this.baseUrl}/getFile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId })
+    });
+
+    const data = await response.json();
+    if (!data.ok) {
+      throw new Error(`Failed to get file: ${data.description}`);
+    }
+    return data.result;
+  }
+
+  async downloadFile(filePath: string): Promise<Uint8Array> {
+    const response = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`);
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  }
+
   startPolling(): void {
     if (this.pollingActive) {
       console.log('Polling already active');
@@ -270,11 +313,11 @@ export class TelegramBot {
   }
 
   async handleMessage(message: TelegramMessage): Promise<void> {
-    if (!message.text || !message.from) return;
+    if (!message.from) return;
 
     for (const handler of this.messageHandlers) {
       try {
-        await handler(message.chat.id, message.text, message.from);
+        await handler(message.chat.id, message.text || null, message.from, message.voice, message.audio);
       } catch (error) {
         console.error('Message handler error:', error);
       }
