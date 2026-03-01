@@ -66,7 +66,7 @@ export class UIManager {
     }
 
     bindEvents() {
-        this.chat.newSessionBtn.addEventListener('click', () => this.chat.uiManager.showWizardModal());
+        this.chat.newSessionBtn?.addEventListener('click', () => this.chat.uiManager.showWizardModal());
         
         if (this.chat.createSessionBtn) {
             this.chat.createSessionBtn.addEventListener('click', () => this.chat.createSession());
@@ -75,36 +75,36 @@ export class UIManager {
             this.chat.cancelBtn.addEventListener('click', () => this.chat.hideWizardModal());
         }
         
-        this.chat.sendBtn.addEventListener('click', () => this.chat.sendMessage());
-        this.chat.abortBtn.addEventListener('click', () => this.chat.abortGeneration());
-        this.chat.microphoneBtn.addEventListener('click', () => this.chat.toggleRecording());
+        this.chat.sendBtn?.addEventListener('click', () => this.chat.sendMessage());
+        this.chat.abortBtn?.addEventListener('click', () => this.chat.abortGeneration());
+        this.chat.microphoneBtn?.addEventListener('click', () => this.chat.toggleRecording());
         
-        this.chat.messageInput.addEventListener('keydown', (e) => {
+        this.chat.messageInput?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.chat.sendMessage();
             }
         });
         
-        this.chat.contextTrust.addEventListener('click', () => this.chat.toggleTrust(true));
-        this.chat.contextUntrust.addEventListener('click', () => this.chat.toggleTrust(false));
-        this.chat.contextCopy.addEventListener('click', () => this.chat.copyChunkContent());
+        this.chat.contextTrust?.addEventListener('click', () => this.chat.toggleTrust(true));
+        this.chat.contextUntrust?.addEventListener('click', () => this.chat.toggleTrust(false));
+        this.chat.contextCopy?.addEventListener('click', () => this.chat.copyChunkContent());
         
-        this.chat.inspectorToggleBtn.addEventListener('click', () => this.toggleInspector());
-        this.chat.inspectorCloseBtn.addEventListener('click', () => this.hideInspector());
+        this.chat.inspectorToggleBtn?.addEventListener('click', () => this.toggleInspector());
+        this.chat.inspectorCloseBtn?.addEventListener('click', () => this.hideInspector());
         if (this.chat.inspectorOverlay) {
             this.chat.inspectorOverlay.addEventListener('click', () => this.hideInspector());
         }
 
-        this.chat.manageSessionsBtn.addEventListener('click', () => this.showSessionsModal());
-        this.chat.sessionsCloseBtn.addEventListener('click', () => this.hideSessionsModal());
+        this.chat.manageSessionsBtn?.addEventListener('click', () => this.showSessionsModal());
+        this.chat.sessionsCloseBtn?.addEventListener('click', () => this.hideSessionsModal());
 
-        this.chat.sessionsSidebarToggleBtn.addEventListener('click', () => this.toggleSessionsSidebar());
-        this.chat.sessionsSidebarCloseBtn.addEventListener('click', () => this.hideSessionsSidebar());
+        this.chat.sessionsSidebarToggleBtn?.addEventListener('click', () => this.toggleSessionsSidebar());
+        this.chat.sessionsSidebarCloseBtn?.addEventListener('click', () => this.hideSessionsSidebar());
         if (this.chat.sessionsSidebarOverlay) {
             this.chat.sessionsSidebarOverlay.addEventListener('click', () => this.hideSessionsSidebar());
         }
-        this.chat.sidebarNewSessionBtn.addEventListener('click', () => {
+        this.chat.sidebarNewSessionBtn?.addEventListener('click', () => {
             this.hideSessionsSidebar();
             this.chat.uiManager.showWizardModal();
         });
