@@ -264,17 +264,24 @@ class RxMarblesVisualizer extends LitElement {
             '#font: Calibri',
             '#fontSize: 12',
             '#leading: 1.2',
-            `#title: ${(pipeline.name || 'Unknown Pipeline').replace(/[[\]#|]/g, ' ')}`
+            `#title: ${(pipeline.name || 'Unknown Pipeline').replace(/[[\]#|]/g, ' ')}`,
+            // Style definitions for operator types
+            '#.operator: fill=#93c5fd stroke=#1e40af',
+            '#.inputStream: fill=#86efac stroke=#166534',
+            '#.outputStream: fill=#fcd34d stroke=#92400e'
         ];
 
         // Build the pipeline diagram
         const operators = pipeline.operators || [];
 
-        // Build the pipeline diagram
         // Use nomnoml's id attribute to create distinct nodes with same display name
         // Format: [<type id=id>label] for definition, then [id] for reference
-        const nodeRefs = ['[inputStream]'];
-        const nodeDefs = ['[inputStream]'];
+        const nodeRefs = [];
+        const nodeDefs = [];
+
+        // Input stream
+        nodeDefs.push('[<inputStream id=input>inputStream]');
+        nodeRefs.push('[input]');
 
         if (operators.length === 0) {
             nodeRefs.push('[empty]');
@@ -283,15 +290,16 @@ class RxMarblesVisualizer extends LitElement {
             operators.forEach((op, index) => {
                 const label = this.formatOperatorLabel(op);
                 const nodeId = `op${index}`;
-                // Definition with id attribute: [<operator id=op0>label]
+                // Definition with id attribute and operator classifier
                 nodeDefs.push(`[<operator id=${nodeId}>${label}]`);
-                // Reference: [op0]
+                // Reference
                 nodeRefs.push(`[${nodeId}]`);
             });
         }
 
-        nodeRefs.push('[outputStream]');
-        nodeDefs.push('[outputStream]');
+        // Output stream
+        nodeDefs.push('[<outputStream id=output>outputStream]');
+        nodeRefs.push('[output]');
 
         // Connect nodes using references
         const connections = [];
