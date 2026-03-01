@@ -81,6 +81,7 @@ Agents are declarative by nature—they say *what* should happen to data, not *h
   - **Sharing**: Use `/id` to get session IDs, `/join <id>` to continue web chats on mobile, and `/share` for web links.
   - **Automatic Cleanup**: Temporary "Thinking..." status messages are automatically deleted.
 - **Security & Trust**: Untrusted web content is filtered from LLM context until explicitly trusted.
+- **HTTPS Support**: Automatic TLS when certificate files are present (self-signed or custom).
 - **PWA Ready**: Installable as a Progressive Web App on mobile and desktop.
 
 ## Architecture
@@ -131,6 +132,44 @@ This app implements the ObservableCAFE pattern:
 
 6. **Open the app**:
    Navigate to `http://localhost:3000`
+
+## HTTPS / TLS
+
+The server automatically enables HTTPS when it detects TLS certificate files in the project root:
+
+### Automatic HTTPS (Self-Signed)
+
+Generate a self-signed certificate (included in repo):
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
+```
+
+The server will automatically use HTTPS when `cert.pem` exists.
+
+### Custom Certificates
+
+Replace `cert.pem` and `key.pem` with your own certificate files. The server will detect them and enable HTTPS automatically.
+
+### Force HTTPS / Disable
+
+Use the `USE_HTTPS` environment variable to override auto-detection:
+```bash
+# Force HTTPS even without cert files (will fail if missing)
+export USE_HTTPS=true
+
+# Force HTTP even with cert files present
+export USE_HTTPS=false
+```
+
+### Accessing the Server
+
+When HTTPS is enabled, the server URL changes:
+- HTTP: `http://localhost:3000`
+- HTTPS: `https://localhost:3000`
+
+The console output will show the correct URL on startup.
+
+> **Note**: Self-signed certificates will trigger browser warnings. This is expected - click "Advanced" → "Proceed" (or add a security exception) to continue.
 
 ## Terminal UI (TUI)
 
@@ -299,6 +338,7 @@ Use `!reload-force` to reload all agents regardless of whether their source chan
 - `OLLAMA_URL` - Ollama server URL.
 - `ObservableCAFE_AGENT_SEARCH_PATHS`: Colon-separated list of directories to scan for agents.
 - `PORT`: HTTP server port (default: `3000`).
+- `USE_HTTPS`: Force HTTPS on (`true`) or off (`false`). Auto-detected by default based on cert file presence.
 - `ObservableCAFE_TRACE`: Set to `1` to enable detailed logging of LLM context.
 - `TELEGRAM_TOKEN`: Telegram bot token.
 - `TRUST_DB_PATH`: Path to the SQLite trust and session database.

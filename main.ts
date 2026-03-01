@@ -20,6 +20,7 @@
  */
 
 import { serve } from 'bun';
+import { readFileSync, existsSync } from 'fs';
 import { createBinaryChunk } from './lib/chunk.js';
 import { connectedAgentStore, type ConnectedAgent } from './lib/connected-agents.js';
 import {
@@ -185,9 +186,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+const USE_HTTPS = process.env.USE_HTTPS === 'true' || existsSync('./cert.pem');
+const tlsConfig = USE_HTTPS ? {
+  cert: readFileSync('./cert.pem'),
+  key: readFileSync('./key.pem'),
+} : undefined;
+
 const server = serve({
   port: PORT,
   idleTimeout: 255,
+  tls: tlsConfig,
   async fetch(request) {
     const url = new URL(request.url);
     const pathname = url.pathname;
@@ -402,7 +410,8 @@ const server = serve({
   }
 });
 
-console.log(`Server running at http://localhost:${PORT}?token=${webToken}`);
+const protocol = USE_HTTPS ? 'https' : 'http';
+console.log(`Server running at ${protocol}://localhost:${PORT}?token=${webToken}`);
 
 (async () => {
   console.log('[Server] Loading agents...');
