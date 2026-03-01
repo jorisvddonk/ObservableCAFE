@@ -73,7 +73,7 @@ interface Message {
   content: string;
 }
 
-type AppMode = 'chat' | 'sessions' | 'new-session' | 'wizard';
+type AppMode = 'chat' | 'sessions' | 'new-session' | 'wizard' | 'inspector';
 
 interface AgentInfo {
   name: string;
@@ -126,11 +126,9 @@ class ChatApp implements Component, Focusable {
   };
   private wizardInput = '';
   
-  private header: Text;
-  private inputBox: Box;
-  private input: Input;
-  private loader: Loader;
-  private sessionsList: SelectList;
+  private inspectorChunks: Chunk[] = [];
+  private inspectorSelectedIndex = 0;
+  private inspectorExpanded = false;
   
   private tui: TUI;
   private abortController: AbortController | null = null;
@@ -363,9 +361,27 @@ class ChatApp implements Component, Focusable {
       this.updateSessionsList();
     } else if (mode === 'new-session') {
       this.updateNewSessionList();
+    } else if (mode === 'inspector') {
+      this.loadInspectorChunks();
     }
     if (this.sessionsList.invalidate) this.sessionsList.invalidate();
     this.tui.requestRender();
+  }
+  
+  private async loadInspectorChunks() {
+    if (!this.sessionId) {
+      this.inspectorChunks = [];
+      return;
+    }
+    try {
+      const historyResp = await this.api<{ chunks: Chunk[] }>(`/api/session/${this.sessionId}/history`);
+      this.inspectorChunks = historyResp.chunks || [];
+      this.inspectorSelectedIndex = 0;
+      this.inspectorExpanded = false;
+    } catch (err: any) {
+      this.addMessage('tui', `Failed to load chunks: ${err.message}`);
+      this.inspectorChunks = [];
+    }
   }
   
   private updateSessionsList() {
@@ -872,6 +888,7 @@ class ChatApp implements Component, Focusable {
       this.addMessage('tui', '/sessions    - Switch sessions');
       this.addMessage('tui', '/new        - Create new session');
       this.addMessage('tui', '/clear      - Clear messages');
+      this.addMessage('tui', '/inspector  - Inspect session chunks');
       this.addMessage('tui', '/rename <n> - Rename session');
       this.addMessage('tui', '/delete     - Delete session');
       this.addMessage('tui', '/system <p> - Set system prompt');
@@ -907,6 +924,11 @@ class ChatApp implements Component, Focusable {
     
     if (trimmed === '/delete') {
       this.deleteCurrentSession();
+      return;
+    }
+    
+    if (trimmed === '/inspector') {
+      this.setMode('inspector');
       return;
     }
     
@@ -982,6 +1004,9 @@ class ChatApp implements Component, Focusable {
     if (this.mode === 'wizard') {
       return this.renderWizardMode(width);
     }
+    if (this.mode === 'inspector') {
+      return this.renderInspectorMode(width);
+    }
     return this.renderChatMode(width);
   }
   
@@ -1040,8 +1065,110 @@ class ChatApp implements Component, Focusable {
     return lines;
   }
   
+  private getChunkRole(chunk: Chunk): string {
+    const role = chunk.annotations?.['chat.role'];
+    if (role) return role;
+    if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url']) return 'web';
+    if (chunk.producer.includes('kobold') || chunk.producer.includes('ollama') || chunk.producer === 'com.rxcafe.assistant') return 'assistant';
+    return chunk.producer.split('.').pop() || 'unknown';
+  }
+  
+  private getRoleColor(role: string): (s: string) => string {
+    switch (role) {
+      case 'user': return chalk.yellow;
+      case 'assistant': return chalk.green;
+      case 'system': return chalk.magenta;
+      case 'web': return chalk.blue;
+      case 'tui': return chalk.cyan;
+      default: return chalk.gray;
+    }
+  }
+  
+  private renderInspectorMode(width: number): string[] {
+    const lines: string[] = [];
+    
+    lines.push(...this.header.render(width));
+    lines.push("");
+    lines.push(chalk.bold.cyan("Inspector"));
+    lines.push("");
+    
+    if (!this.sessionId) {
+      lines.push(chalk.gray("No session selected"));
+      return lines;
+    }
+    
+    lines.push(chalk.gray("Session: ") + this.sessionId.slice(0, 16) + "...");
+    lines.push(chalk.gray("Agent: ") + this.agentName);
+    lines.push(chalk.gray("Chunks: ") + String(this.inspectorChunks.length));
+    lines.push("");
+    lines.push(chalk.gray("Controls: ↑/↓ navigate, Enter expand/details, r refresh, Escape back"));
+    lines.push("");
+    
+    if (this.inspectorChunks.length === 0) {
+      lines.push(chalk.gray("No chunks in session"));
+      return lines;
+    }
+    
+    const maxVisible = Math.min(this.inspectorChunks.length, 12);
+    const startIdx = Math.max(0, Math.min(this.inspectorSelectedIndex - 4, this.inspectorChunks.length - maxVisible));
+    const endIdx = Math.min(startIdx + maxVisible, this.inspectorChunks.length);
+    
+    for (let i = startIdx; i < endIdx; i++) {
+      const chunk = this.inspectorChunks[i];
+      const isSelected = i === this.inspectorSelectedIndex;
+      const role = this.getChunkRole(chunk);
+      const roleColor = this.getRoleColor(role);
+      const shortId = chunk.id.split('-').slice(-2).join('-');
+      
+      const prefix = isSelected ? chalk.bgYellow.black("▶") : " ";
+      const idStr = chalk.gray(shortId);
+      const roleStr = roleColor(`[${role}]`);
+      
+      let contentPreview = "";
+      if (chunk.contentType === 'text' && typeof chunk.content === 'string') {
+        contentPreview = chunk.content.substring(0, 50).replace(/\n/g, ' ');
+        if (chunk.content.length > 50) contentPreview += "...";
+      } else if (chunk.contentType === 'null') {
+        contentPreview = chalk.gray("(null)");
+      } else if (chunk.contentType === 'binary') {
+        contentPreview = chalk.gray("(binary)");
+      }
+      
+      lines.push(`${prefix} ${idStr} ${roleStr} ${contentPreview}`);
+      
+      if (isSelected && this.inspectorExpanded) {
+        const jsonStr = JSON.stringify(chunk, null, 2);
+        const jsonLines = jsonStr.split('\n');
+        for (const jsonLine of jsonLines) {
+          const truncated = truncateToWidth(jsonLine, width - 4);
+          lines.push("  " + chalk.gray(truncated));
+        }
+      }
+    }
+    
+    return lines;
+  }
+  
   handleInput(data: string): void {
     if (!data || typeof data !== 'string') return;
+    
+    if (this.mode === 'inspector') {
+      if (matchesKey(data, Key.escape)) {
+        this.setMode('chat');
+      } else if (matchesKey(data, Key.enter)) {
+        this.inspectorExpanded = !this.inspectorExpanded;
+        this.tui.requestRender();
+      } else if (matchesKey(data, Key.up)) {
+        this.inspectorSelectedIndex = Math.max(0, this.inspectorSelectedIndex - 1);
+        this.tui.requestRender();
+      } else if (matchesKey(data, Key.down)) {
+        this.inspectorSelectedIndex = Math.min(this.inspectorChunks.length - 1, this.inspectorSelectedIndex + 1);
+        this.tui.requestRender();
+      } else if (data === 'r' || data === 'R') {
+        this.loadInspectorChunks().then(() => this.tui.requestRender());
+      }
+      return;
+    }
     
     if (this.mode === 'wizard') {
       this.handleWizardInput(data);
