@@ -54,6 +54,7 @@ export class RecordingManager {
 
             this.mediaRecorder.start();
             this.isRecording = true;
+            this.chat.isRecording = true;
             this.chat.updateUIState();
 
         } catch (error) {
@@ -66,6 +67,7 @@ export class RecordingManager {
         if (this.mediaRecorder && this.isRecording) {
             this.mediaRecorder.stop();
             this.isRecording = false;
+            this.chat.isRecording = false;
             this.chat.updateUIState();
         }
     }
