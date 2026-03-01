@@ -63,7 +63,9 @@ const EVALUATOR_DESCRIPTIONS: Record<string, string> = {
   createLLMChunkEvaluator: 'LLM completion',
   completeTurnWithLLM: 'LLM response generation',
   processWithEvaluator: 'Processes with evaluator',
-  generateImage: 'Generates image via ComfyUI'
+  generateImage: 'Generates image via ComfyUI',
+  convertToMp3: 'Converts audio to MP3',
+  transcribeAudio: 'Transcribes audio to text'
 };
 
 function getEvaluatorDescription(name: string): string {
@@ -72,6 +74,23 @@ function getEvaluatorDescription(name: string): string {
     if (name.toLowerCase().includes(key.toLowerCase())) return desc;
   }
   return name;
+}
+
+// Track evaluator variables in scope
+class EvaluatorScope {
+  private variables: Map<string, string> = new Map(); // varName -> evaluatorName
+
+  addVariable(name: string, evaluatorName: string) {
+    this.variables.set(name, evaluatorName);
+  }
+
+  getEvaluator(name: string): string | undefined {
+    return this.variables.get(name);
+  }
+
+  hasVariable(name: string): boolean {
+    return this.variables.has(name);
+  }
 }
 
 export function analyzeAgentPipeline(code: string): PipelineAnalysis {
@@ -89,14 +108,14 @@ export function analyzeAgentPipeline(code: string): PipelineAnalysis {
     sourceCode: code
   };
 
+  const scope = new EvaluatorScope();
+
   // Extract agent name and description
   ts.forEachChild(sourceFile, function visit(node) {
-    // Find export const name: AgentDefinition
     if (ts.isVariableDeclaration(node) && 
         node.type?.getText(sourceFile).includes('AgentDefinition')) {
       result.name = node.name.getText(sourceFile);
       
-      // Look for description property
       if (node.initializer && ts.isObjectLiteralExpression(node.initializer)) {
         for (const prop of node.initializer.properties) {
           if (ts.isPropertyAssignment(prop) && 
@@ -110,35 +129,81 @@ export function analyzeAgentPipeline(code: string): PipelineAnalysis {
     ts.forEachChild(node, visit);
   });
 
-  // Find pipe chain
-  function findPipe(node: ts.Node) {
+  // First pass: find all evaluator variable assignments
+  function findEvaluatorVariables(node: ts.Node) {
+    // const x = evaluatorName({...})
+    if (ts.isVariableDeclaration(node) && 
+        node.initializer && 
+        ts.isCallExpression(node.initializer)) {
+      const callName = node.initializer.expression.getText(sourceFile);
+      if (EVALUATOR_DESCRIPTIONS[callName]) {
+        const varName = node.name.getText(sourceFile);
+        scope.addVariable(varName, callName);
+      }
+    }
+    ts.forEachChild(node, findEvaluatorVariables);
+  }
+  ts.forEachChild(sourceFile, findEvaluatorVariables);
+
+  // Second pass: find pipe chains and collect them in order
+  const pipeOperators: ParsedOperator[] = [];
+  const subscribeOperators: ParsedOperator[] = [];
+  
+  function findPipesAndSubscribes(node: ts.Node) {
     if (ts.isCallExpression(node)) {
       const exprText = node.expression.getText(sourceFile);
-      // Check for .pipe( or .pipe followed by parentheses in parent
+      
+      // Process pipe chains first - but still traverse into them for nested calls
       if (exprText === 'pipe' || exprText.endsWith('.pipe')) {
-        result.operators = extractOperators(node, sourceFile);
+        const pipeOps = extractOperators(node, sourceFile, scope);
+        pipeOperators.push(...pipeOps);
+        // Continue traversing to find any subscribes in pipe arguments
+      }
+      
+      // Collect subscribe handlers separately (they come after pipe)
+      // But first traverse into the expression (which may contain the pipe chain)
+      if (exprText === 'subscribe' || exprText.endsWith('.subscribe')) {
+        // First traverse into the expression part (e.g., the pipe chain)
+        if (ts.isPropertyAccessExpression(node.expression)) {
+          ts.forEachChild(node.expression, findPipesAndSubscribes);
+        }
+        // Then extract evaluators from the subscribe handler
+        const handlerOps = extractSubscribeEvaluators(node, sourceFile, scope);
+        subscribeOperators.push(...handlerOps);
+        // Don't traverse into subscribe handler arguments (already processed)
         return;
       }
     }
-    ts.forEachChild(node, findPipe);
+    ts.forEachChild(node, findPipesAndSubscribes);
   }
-  ts.forEachChild(sourceFile, findPipe);
+  ts.forEachChild(sourceFile, findPipesAndSubscribes);
+  
+  // Combine: pipe operators first, then subscribe handlers
+  result.operators = [...pipeOperators, ...subscribeOperators];
 
   return result;
 }
 
-function extractOperators(pipeCall: ts.CallExpression, sourceFile: ts.SourceFile): ParsedOperator[] {
+function extractOperators(
+  pipeCall: ts.CallExpression, 
+  sourceFile: ts.SourceFile, 
+  scope: EvaluatorScope
+): ParsedOperator[] {
   const operators: ParsedOperator[] = [];
 
   for (const arg of pipeCall.arguments) {
-    const op = parseOperator(arg, sourceFile);
+    const op = parseOperator(arg, sourceFile, scope);
     if (op) operators.push(op);
   }
 
   return operators;
 }
 
-function parseOperator(node: ts.Node, sourceFile: ts.SourceFile): ParsedOperator | null {
+function parseOperator(
+  node: ts.Node, 
+  sourceFile: ts.SourceFile, 
+  scope: EvaluatorScope
+): ParsedOperator | null {
   // Handle catchError - skip it
   if (ts.isCallExpression(node)) {
     const funcName = node.expression.getText(sourceFile);
@@ -161,7 +226,7 @@ function parseOperator(node: ts.Node, sourceFile: ts.SourceFile): ParsedOperator
   if (ts.isCallExpression(node)) {
     const funcName = node.expression.getText(sourceFile);
     if (['mergeMap', 'switchMap', 'concatMap'].includes(funcName)) {
-      return parseMapOperator(funcName, node.arguments[0], sourceFile);
+      return parseMapOperator(funcName, node.arguments[0], sourceFile, scope);
     }
   }
 
@@ -189,6 +254,140 @@ function parseOperator(node: ts.Node, sourceFile: ts.SourceFile): ParsedOperator
   }
 
   return null;
+}
+
+function parseMapOperator(
+  funcName: string, 
+  arg: ts.Node, 
+  sourceFile: ts.SourceFile,
+  scope: EvaluatorScope
+): ParsedOperator {
+  const text = arg.getText(sourceFile);
+  const foundEvaluators: string[] = [];
+
+  // Walk the AST to find all function calls
+  function findCalls(node: ts.Node) {
+    if (ts.isCallExpression(node)) {
+      const callName = node.expression.getText(sourceFile);
+      
+      // Check if this is a variable that holds an evaluator
+      if (scope.hasVariable(callName)) {
+        const evaluatorName = scope.getEvaluator(callName);
+        if (evaluatorName) {
+          foundEvaluators.push(evaluatorName);
+        }
+      }
+      
+      // Check for direct evaluator calls
+      if (EVALUATOR_DESCRIPTIONS[callName]) {
+        foundEvaluators.push(callName);
+      }
+      
+      // Check for session.createEvaluator pattern
+      if (callName.startsWith('session.')) {
+        const method = callName.split('.')[1];
+        if (EVALUATOR_DESCRIPTIONS[method]) {
+          foundEvaluators.push(method);
+        }
+      }
+    }
+    ts.forEachChild(node, findCalls);
+  }
+  findCalls(arg);
+
+  // Check for completeTurnWithLLM
+  const hasLLM = text.includes('completeTurnWithLLM');
+  if (hasLLM) {
+    foundEvaluators.push('completeTurnWithLLM');
+  }
+
+  if (foundEvaluators.length === 0) {
+    return {
+      name: funcName,
+      type: 'Async Transform',
+      description: 'Maps to async operation'
+    };
+  }
+
+  // Deduplicate
+  const unique = [...new Set(foundEvaluators)];
+  const descriptions = unique.map(e => getEvaluatorDescription(e));
+
+  return {
+    name: funcName,
+    type: foundEvaluators.includes('completeTurnWithLLM') && unique.length === 1 ? 'LLM Call' : 'Custom Evaluator',
+    description: descriptions.join(', ')
+  };
+}
+
+function extractSubscribeEvaluators(
+  subscribeCall: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+  scope: EvaluatorScope
+): ParsedOperator[] {
+  const operators: ParsedOperator[] = [];
+  const foundEvaluators: Set<string> = new Set();
+
+  // Look through subscribe arguments for evaluator calls
+  function findEvaluatorsInSubscribe(node: ts.Node) {
+    // Check for call expressions
+    if (ts.isCallExpression(node)) {
+      // Case 1: Direct call like transcribeAudio(...)
+      if (ts.isIdentifier(node.expression)) {
+        const callName = node.expression.getText(sourceFile);
+        if (EVALUATOR_DESCRIPTIONS[callName]) {
+          foundEvaluators.add(callName);
+        }
+        // Check if this is a variable that holds an evaluator
+        if (scope.hasVariable(callName)) {
+          const evaluatorName = scope.getEvaluator(callName);
+          if (evaluatorName) {
+            foundEvaluators.add(evaluatorName);
+          }
+        }
+      }
+      
+      // Case 2: Curried call like transcribeAudio(...)(...)
+      // The node.expression is itself a CallExpression
+      if (ts.isCallExpression(node.expression)) {
+        if (ts.isIdentifier(node.expression.expression)) {
+          const innerCallName = node.expression.expression.getText(sourceFile);
+          if (EVALUATOR_DESCRIPTIONS[innerCallName]) {
+            foundEvaluators.add(innerCallName);
+          }
+        }
+      }
+      
+      // Case 3: Method call like x.subscribe(...)
+      if (ts.isPropertyAccessExpression(node.expression)) {
+        const propName = node.expression.name.getText(sourceFile);
+        // Recurse into nested subscribes too
+        if (propName === 'subscribe') {
+          for (const arg of node.arguments) {
+            findEvaluatorsInSubscribe(arg);
+          }
+        }
+      }
+    }
+    
+    // Continue searching all children
+    ts.forEachChild(node, findEvaluatorsInSubscribe);
+  }
+
+  for (const arg of subscribeCall.arguments) {
+    findEvaluatorsInSubscribe(arg);
+  }
+
+  // Create operators for each found evaluator in subscribe
+  for (const evaluatorName of foundEvaluators) {
+    operators.push({
+      name: evaluatorName,
+      type: 'Custom Evaluator',
+      description: getEvaluatorDescription(evaluatorName)
+    });
+  }
+
+  return operators;
 }
 
 function parseFilter(arg: ts.Node, sourceFile: ts.SourceFile): ParsedOperator {
@@ -243,54 +442,5 @@ function parseMap(arg: ts.Node, sourceFile: ts.SourceFile): ParsedOperator {
     name: 'map',
     type: 'Transform',
     description: text.length > 40 ? text.slice(0, 40) + '...' : text
-  };
-}
-
-function parseMapOperator(funcName: string, arg: ts.Node, sourceFile: ts.SourceFile): ParsedOperator {
-  const text = arg.getText(sourceFile);
-  const foundEvaluators: string[] = [];
-
-  // Walk the AST to find all function calls
-  function findCalls(node: ts.Node) {
-    if (ts.isCallExpression(node)) {
-      const callName = node.expression.getText(sourceFile);
-      // Check for direct evaluator calls
-      if (EVALUATOR_DESCRIPTIONS[callName]) {
-        foundEvaluators.push(callName);
-      }
-      // Check for session.createEvaluator pattern
-      if (callName.startsWith('session.')) {
-        const method = callName.split('.')[1];
-        if (EVALUATOR_DESCRIPTIONS[method]) {
-          foundEvaluators.push(method);
-        }
-      }
-    }
-    ts.forEachChild(node, findCalls);
-  }
-  findCalls(arg);
-
-  // Check for completeTurnWithLLM
-  const hasLLM = text.includes('completeTurnWithLLM');
-  if (hasLLM) {
-    foundEvaluators.push('completeTurnWithLLM');
-  }
-
-  if (foundEvaluators.length === 0) {
-    return {
-      name: funcName,
-      type: 'Async Transform',
-      description: 'Maps to async operation'
-    };
-  }
-
-  // Deduplicate
-  const unique = [...new Set(foundEvaluators)];
-  const descriptions = unique.map(e => getEvaluatorDescription(e));
-
-  return {
-    name: funcName,
-    type: foundEvaluators.includes('completeTurnWithLLM') && unique.length === 1 ? 'LLM Call' : 'Custom Evaluator',
-    description: descriptions.join(', ')
   };
 }
