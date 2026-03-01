@@ -20,8 +20,8 @@ export class RxMessageTool extends LitElement {
       border-radius: 1rem;
       animation: fadeIn 0.2s ease-out;
       align-self: flex-start;
-      background-color: var(--assistant-bubble, #f3f4f6);
-      border: 1px solid var(--border-color, #e5e7eb);
+      background-color: #f5f3ff;
+      border-left: 4px solid #8b5cf6;
     }
     
     @keyframes fadeIn { 
@@ -34,7 +34,8 @@ export class RxMessageTool extends LitElement {
       align-items: center;
       gap: 0.5rem;
       margin-bottom: 0.5rem;
-      font-weight: 500;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-color, #e5e7eb);
     }
     
     .tool-icon {
@@ -42,26 +43,32 @@ export class RxMessageTool extends LitElement {
     }
     
     .tool-name {
-      color: var(--text-color, #1f2937);
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #8b5cf6;
     }
     
     .tool-params {
+      font-size: 0.8rem;
+      color: var(--text-secondary, #6b7280);
       font-family: monospace;
-      font-size: 0.75rem;
       background-color: rgba(0, 0, 0, 0.05);
       padding: 0.5rem;
       border-radius: 0.25rem;
-      margin-bottom: 0.5rem;
-      white-space: pre-wrap;
+      margin: 0.5rem 0;
       overflow-x: auto;
+      white-space: pre-wrap;
     }
     
     .tool-result {
-      font-family: monospace;
-      font-size: 0.75rem;
-      background-color: rgba(139, 92, 246, 0.1);
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #059669;
+      margin-top: 0.5rem;
       padding: 0.5rem;
+      background-color: rgba(5, 150, 105, 0.1);
       border-radius: 0.25rem;
+      font-family: monospace;
       white-space: pre-wrap;
       overflow-x: auto;
     }
@@ -83,6 +90,27 @@ export class RxMessageTool extends LitElement {
       display: flex;
       align-items: center;
       gap: 0.25rem;
+    }
+    
+    /* Dark theme support */
+    @media (prefers-color-scheme: dark) {
+      .message {
+        background-color: #2e1065;
+        border-left-color: #a78bfa;
+      }
+      
+      .tool-name {
+        color: #a78bfa;
+      }
+      
+      .tool-params {
+        background-color: rgba(255, 255, 255, 0.05);
+      }
+      
+      .tool-result {
+        background-color: rgba(5, 150, 105, 0.2);
+        color: #34d399;
+      }
     }
   `;
 
