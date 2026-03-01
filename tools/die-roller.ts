@@ -14,6 +14,7 @@ export interface DieRollParameters {
  */
 export class DieRollerTool {
   readonly name = 'rollDice';
+  readonly systemPrompt = DIE_ROLLER_SYSTEM_PROMPT;
 
   execute(parameters: DieRollParameters): DieRollResult {
     const expression = parameters.expression || '1d6';
