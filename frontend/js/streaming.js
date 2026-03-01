@@ -91,9 +91,8 @@ export class StreamingManager {
                     if (chunk.annotations['com.rxcafe.example.sentiment']) {
                         chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                     }
-                    if (chunk.contentType === 'text' && !el.classList.contains('streaming')) {
+                    if (chunk.contentType === 'text' && !el.classList?.contains('streaming')) {
                         chat.updateMessageContent(el, chunk.content, chunk.annotations);
-                        const contentEl = el.querySelector('.message-content');
                         if (chunk.annotations['com.rxcafe.example.sentiment']) {
                             chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                         }

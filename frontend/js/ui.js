@@ -77,9 +77,6 @@ export class UIManager {
         
         this.chat.sendBtn.addEventListener('click', () => this.chat.sendMessage());
         this.chat.abortBtn.addEventListener('click', () => this.chat.abortGeneration());
-        if (this.chat.copySessionIdBtn) {
-            this.chat.copySessionIdBtn.addEventListener('click', () => this.chat.copySessionId());
-        }
         this.chat.microphoneBtn.addEventListener('click', () => this.chat.toggleRecording());
         
         this.chat.messageInput.addEventListener('keydown', (e) => {

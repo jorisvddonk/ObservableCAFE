@@ -1,5 +1,13 @@
 import { scrollToBottom } from './dom-utils.js';
 
+// Import Lit widget components
+import { RxMessageText } from '../widgets/rx-message-text.js';
+import { RxMessageImage } from '../widgets/rx-message-image.js';
+import { RxMessageAudio } from '../widgets/rx-message-audio.js';
+import { RxMessageWeb } from '../widgets/rx-message-web.js';
+import { RxMessageTool } from '../widgets/rx-message-tool.js';
+import { RxMessageSystem } from '../widgets/rx-message-system.js';
+
 export class MessagesManager {
     constructor(chat) {
         this.chat = chat;
@@ -118,18 +126,10 @@ export class MessagesManager {
     }
 
     addTelegramLabel(messageEl) {
-        if (!messageEl) return;
-        let labelEl = messageEl.querySelector('.telegram-label');
-        if (!labelEl) {
-            labelEl = document.createElement('div');
-            labelEl.className = 'message-meta telegram-label';
-            labelEl.textContent = 'via Telegram';
-            labelEl.style.fontSize = '0.65rem';
-            labelEl.style.marginTop = '0.2rem';
-            labelEl.style.fontStyle = 'italic';
-            labelEl.style.textAlign = 'right';
-            labelEl.style.opacity = '0.8';
-            messageEl.querySelector('.message-content').appendChild(labelEl);
+        if (!messageEl || messageEl.tagName !== 'RX-MESSAGE-TEXT') return;
+        const annotations = messageEl.annotations || {};
+        if (!annotations['client.type']) {
+            messageEl.annotations = { ...annotations, 'client.type': 'telegram' };
         }
     }
 
@@ -138,111 +138,41 @@ export class MessagesManager {
         const toolResult = chunk.annotations?.['tool.results'];
         const toolDetection = chunk.annotations?.['com.rxcafe.tool-detection'];
 
-        const messageEl = document.createElement('div');
+        const toolEl = document.createElement('rx-message-tool');
         this.chat._elCounter++;
-        messageEl.dataset.elId = this.chat._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = 'message assistant tool-call';
+        toolEl.dataset.elId = this.chat._elCounter;
+        toolEl.toolName = toolName || 'Unknown Tool';
+        toolEl.toolResult = toolResult;
+        toolEl.toolCalls = toolDetection?.toolCalls || [];
+        toolEl.content = chunk.content || '';
+        toolEl.chunkId = chunk.id;
 
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-
-        const headerEl = document.createElement('div');
-        headerEl.className = 'tool-call-header';
-
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'tool-icon';
-        iconSpan.textContent = '🔧';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'tool-name';
-        nameSpan.textContent = toolName || 'Unknown Tool';
-
-        headerEl.appendChild(iconSpan);
-        headerEl.appendChild(nameSpan);
-        contentEl.appendChild(headerEl);
-
-        if (toolDetection?.toolCalls?.length > 0) {
-            const toolCall = toolDetection.toolCalls[0];
-            const paramsEl = document.createElement('div');
-            paramsEl.className = 'tool-params';
-            paramsEl.textContent = JSON.stringify(toolCall.parameters, null, 2);
-            contentEl.appendChild(paramsEl);
-        }
-
-        if (toolResult !== undefined) {
-            const resultEl = document.createElement('div');
-            resultEl.className = 'tool-result';
-            resultEl.textContent = typeof toolResult === 'object' 
-                ? JSON.stringify(toolResult, null, 2)
-                : String(toolResult);
-            contentEl.appendChild(resultEl);
-        }
-
-        if (chunk.content) {
-            const textEl = document.createElement('div');
-            textEl.className = 'message-body';
-            textEl.style.marginTop = '0.5rem';
-            textEl.textContent = chunk.content;
-            contentEl.appendChild(textEl);
-        }
-
-        messageEl.appendChild(contentEl);
-        messageEl.addEventListener('contextmenu', (e) => this.chat.showContextMenu(e, chunk.id));
-
-        this.chat.messagesEl.appendChild(messageEl);
-        this.chat.chunkElements.set(chunk.id, messageEl);
+        this.chat.messagesEl.appendChild(toolEl);
+        this.chat.chunkElements.set(chunk.id, toolEl);
         scrollToBottom(this.chat.messagesEl);
     }
 
     addToolCallIndicator(messageEl, toolCalls) {
-        if (!messageEl || !toolCalls?.length) return;
+        if (!messageEl || !toolCalls?.length || messageEl.tagName !== 'RX-MESSAGE-TEXT') return;
 
-        let metaEl = messageEl.querySelector('.message-meta');
-        if (!metaEl) {
-            metaEl = document.createElement('div');
-            metaEl.className = 'message-meta';
-            const contentEl = messageEl.querySelector('.message-content');
-            if (contentEl) {
-                contentEl.appendChild(metaEl);
-            }
-        }
-
-        toolCalls.forEach((toolCall) => {
-            const toolIndicator = document.createElement('div');
-            toolIndicator.className = 'tool-call-indicator';
-            toolIndicator.style.cssText = 'font-size: 0.7rem; margin-top: 0.4rem; padding: 0.4rem; background-color: rgba(139, 92, 246, 0.1); border-radius: 0.25rem; color: #8b5cf6;';
-
-            let paramsText = '';
-            if (toolCall.parameters && Object.keys(toolCall.parameters).length > 0) {
-                paramsText = ` → ${JSON.stringify(toolCall.parameters)}`;
-            }
-
-            toolIndicator.innerHTML = `<span style="margin-right: 0.25rem;">🔧</span>${toolCall.name}${paramsText}`;
-            metaEl.appendChild(toolIndicator);
-        });
+        const annotations = messageEl.annotations || {};
+        const existingIndicators = annotations['toolCallIndicators'] || [];
+        messageEl.annotations = { 
+            ...annotations, 
+            'toolCallIndicators': [...existingIndicators, ...toolCalls]
+        };
     }
 
     addSystemChunk(chunk, prompt) {
         this.chat.addRawChunk(chunk);
         
-        const messageEl = document.createElement('div');
-        messageEl.className = 'message system-prompt';
-        messageEl.dataset.chunkId = chunk.id;
+        const systemEl = document.createElement('rx-message-system');
+        systemEl.content = prompt;
+        systemEl.chunkId = chunk.id;
+        systemEl.type = 'system-prompt';
         
-        const headerEl = document.createElement('div');
-        headerEl.className = 'system-header';
-        headerEl.innerHTML = '<span class="system-label">⚙️ System Prompt</span>';
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        contentEl.textContent = prompt;
-        
-        messageEl.appendChild(headerEl);
-        messageEl.appendChild(contentEl);
-        
-        this.chat.messagesEl.appendChild(messageEl);
-        this.chat.chunkElements.set(chunk.id, messageEl);
+        this.chat.messagesEl.appendChild(systemEl);
+        this.chat.chunkElements.set(chunk.id, systemEl);
         scrollToBottom(this.chat.messagesEl);
     }
 
@@ -252,41 +182,18 @@ export class MessagesManager {
         const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
         const sourceUrl = chunk.annotations?.['web.source-url'] || 'Unknown source';
         
-        const messageEl = document.createElement('div');
-        messageEl.className = `message web ${isTrusted ? 'trusted' : 'untrusted'}`;
-        messageEl.dataset.chunkId = chunk.id;
+        const webEl = document.createElement('rx-message-web');
+        webEl.content = chunk.content;
+        webEl.sourceUrl = sourceUrl;
+        webEl.trusted = isTrusted;
+        webEl.chunkId = chunk.id;
         
-        const headerEl = document.createElement('div');
-        headerEl.className = 'web-header';
+        webEl.addEventListener('trust-toggle', (e) => {
+            this.chat.toggleTrustFromButton(e.detail.chunkId, e.detail.trusted);
+        });
         
-        const sourceEl = document.createElement('span');
-        sourceEl.className = 'web-source';
-        sourceEl.textContent = `Web: ${sourceUrl}`;
-        
-        const trustBadge = document.createElement('span');
-        trustBadge.className = `trust-badge ${isTrusted ? 'trusted' : 'untrusted'}`;
-        trustBadge.textContent = isTrusted ? 'Trusted' : 'Untrusted';
-        
-        const trustToggle = document.createElement('button');
-        trustToggle.className = 'trust-toggle';
-        trustToggle.textContent = isTrusted ? 'Untrust' : 'Trust';
-        trustToggle.onclick = () => this.chat.toggleTrustFromButton(chunk.id, !isTrusted);
-        
-        headerEl.appendChild(sourceEl);
-        headerEl.appendChild(trustBadge);
-        headerEl.appendChild(trustToggle);
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        contentEl.textContent = chunk.content;
-        
-        messageEl.appendChild(headerEl);
-        messageEl.appendChild(contentEl);
-        
-        messageEl.addEventListener('contextmenu', (e) => this.chat.showContextMenu(e, chunk.id));
-        
-        this.chat.messagesEl.appendChild(messageEl);
-        this.chat.chunkElements.set(chunk.id, messageEl);
+        this.chat.messagesEl.appendChild(webEl);
+        this.chat.chunkElements.set(chunk.id, webEl);
         scrollToBottom(this.chat.messagesEl);
         
         if (!isTrusted) {
@@ -320,36 +227,17 @@ export class MessagesManager {
         const blob = new Blob([uint8], { type: mimeType });
         const url = URL.createObjectURL(blob);
         
-        const messageEl = document.createElement('div');
+        const imageEl = document.createElement('rx-message-image');
         this.chat._elCounter++;
-        messageEl.dataset.elId = this.chat._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = `message ${role} image-message`;
+        imageEl.dataset.elId = this.chat._elCounter;
+        imageEl.role = role;
+        imageEl.src = url;
+        imageEl.alt = chunk.annotations?.['image.description'] || 'Generated image';
+        imageEl.description = chunk.annotations?.['image.description'] || '';
+        imageEl.chunkId = chunk.id;
         
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = chunk.annotations?.['image.description'] || 'Generated image';
-        img.style.maxWidth = '100%';
-        img.style.borderRadius = '0.5rem';
-        img.style.display = 'block';
-        
-        img.onload = () => URL.revokeObjectURL(url);
-        
-        contentEl.appendChild(img);
-        
-        if (chunk.annotations?.['image.description']) {
-            const caption = document.createElement('div');
-            caption.className = 'message-meta';
-            caption.textContent = chunk.annotations['image.description'];
-            contentEl.appendChild(caption);
-        }
-        
-        messageEl.appendChild(contentEl);
-        this.chat.messagesEl.appendChild(messageEl);
-        this.chat.chunkElements.set(chunk.id, messageEl);
+        this.chat.messagesEl.appendChild(imageEl);
+        this.chat.chunkElements.set(chunk.id, imageEl);
         scrollToBottom(this.chat.messagesEl);
     }
 
@@ -380,37 +268,16 @@ export class MessagesManager {
         const url = URL.createObjectURL(blob);
         console.log(`[RXCAFE] Created audio blob URL: ${url} (size: ${blob.size} bytes, type: ${mimeType})`);
         
-        const messageEl = document.createElement('div');
+        const audioEl = document.createElement('rx-message-audio');
         this.chat._elCounter++;
-        messageEl.dataset.elId = this.chat._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = `message ${role} audio-message`;
+        audioEl.dataset.elId = this.chat._elCounter;
+        audioEl.role = role;
+        audioEl.src = url;
+        audioEl.description = chunk.annotations?.['audio.description'] || '';
+        audioEl.chunkId = chunk.id;
         
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const audio = document.createElement('audio');
-        audio.src = url;
-        audio.controls = true;
-        audio.style.width = '100%';
-        audio.style.display = 'block';
-        
-        audio.onload = () => console.log('[RXCAFE] Audio loaded');
-        audio.onerror = (e) => console.error('[RXCAFE] Audio error:', e);
-        audio.onloadedmetadata = (e) => console.log('[RXCAFE] Audio metadata:', e.target.duration, 'seconds');
-        
-        contentEl.appendChild(audio);
-        
-        if (chunk.annotations?.['audio.description']) {
-            const caption = document.createElement('div');
-            caption.className = 'message-meta';
-            caption.textContent = chunk.annotations['audio.description'];
-            contentEl.appendChild(caption);
-        }
-        
-        messageEl.appendChild(contentEl);
-        this.chat.messagesEl.appendChild(messageEl);
-        this.chat.chunkElements.set(chunk.id, messageEl);
+        this.chat.messagesEl.appendChild(audioEl);
+        this.chat.chunkElements.set(chunk.id, audioEl);
         scrollToBottom(this.chat.messagesEl);
     }
 
@@ -430,20 +297,9 @@ export class MessagesManager {
         if (!messageEl || !sentiment) return;
         console.log('[RXCAFE] updateSentiment called for element:', messageEl.dataset.elId, sentiment);
         
-        let metaEl = messageEl.querySelector('.sentiment-meta');
-        if (!metaEl) {
-            metaEl = document.createElement('div');
-            metaEl.className = 'message-meta sentiment-meta';
-            metaEl.style.fontSize = '0.7rem';
-            metaEl.style.marginTop = '0.4rem';
-            metaEl.style.padding = '0.4rem';
-            metaEl.style.backgroundColor = 'rgba(0,0,0,0.05)';
-            metaEl.style.borderRadius = '0.25rem';
-            messageEl.querySelector('.message-content').appendChild(metaEl);
+        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
+            const annotations = messageEl.annotations || {};
+            messageEl.annotations = { ...annotations, 'com.rxcafe.example.sentiment': sentiment };
         }
-        
-        const score = parseFloat(sentiment.score) || 0;
-        const emoji = score > 0.3 ? '😊' : (score < -0.3 ? '☹️' : '😐');
-        metaEl.textContent = `Sentiment: ${emoji} (${score.toFixed(2)}) - ${sentiment.explanation}`;
     }
 }

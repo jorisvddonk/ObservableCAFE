@@ -192,12 +192,8 @@ class RXCafeChat {
         this.currentMessageEl = this.createMessageElement('assistant', '');
         this.currentMessageEl.classList.add('streaming');
         this.currentMessageEl.dataset.pendingAssistant = 'true';
+        this.currentMessageEl.pending = true;
         this.currentContent = '';
-        
-        const loadingEl = document.createElement('div');
-        loadingEl.className = 'loading-indicator';
-        loadingEl.innerHTML = '<span></span><span></span><span></span>';
-        this.currentMessageEl.querySelector('.message-content').appendChild(loadingEl);
         
         this.messagesEl.appendChild(this.currentMessageEl);
         this.scrollToBottom();
@@ -213,11 +209,8 @@ class RXCafeChat {
             const decoder = new TextDecoder();
             let buffer = '';
             
-            const contentEl = this.currentMessageEl.querySelector('.message-content');
-            const loadingIndicator = contentEl?.querySelector('.loading-indicator');
-            if (loadingIndicator) {
-                console.log('[RXCAFE] Removing loading indicator');
-                loadingIndicator.remove();
+            if (this.currentMessageEl.tagName === 'RX-MESSAGE-TEXT') {
+                this.currentMessageEl.pending = false;
             }
             
             while (true) {
@@ -379,37 +372,23 @@ class RXCafeChat {
     }
     
     createMessageElement(role, content, annotations = {}) {
-        const messageEl = document.createElement('div');
+        const textEl = document.createElement('rx-message-text');
         this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.className = `message ${role}`;
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const bodyEl = document.createElement('div');
-        bodyEl.className = 'message-body';
-        this.renderMessageBody(bodyEl, content, annotations);
-        
-        contentEl.appendChild(bodyEl);
-        messageEl.appendChild(contentEl);
-        return messageEl;
+        textEl.dataset.elId = this._elCounter;
+        textEl.role = role;
+        textEl.content = content;
+        textEl.annotations = annotations;
+        return textEl;
     }
 
-    renderMessageBody(el, content, annotations) {
-        if (annotations['parsers.markdown.enabled'] && typeof marked !== 'undefined') {
-            el.innerHTML = marked.parse(content);
-        } else {
-            el.textContent = content;
-        }
-    }
-    
     updateMessageContent(messageEl, content, annotations = {}) {
-        const bodyEl = messageEl.querySelector('.message-body');
-        if (bodyEl) {
-            this.renderMessageBody(bodyEl, content, annotations);
-            this.scrollToBottom();
+        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
+            messageEl.content = content;
+            if (annotations && Object.keys(annotations).length > 0) {
+                messageEl.annotations = { ...messageEl.annotations, ...annotations };
+            }
         }
+        this.scrollToBottom();
     }
     
     addMessage(role, content, chunkId = null, annotations = {}) {
@@ -438,9 +417,8 @@ class RXCafeChat {
     }
     
     showErrorInMessage(messageEl, error) {
-        const contentEl = messageEl.querySelector('.message-content');
-        if (contentEl) {
-            contentEl.innerHTML = `<span style="color: #dc2626;">Error: ${error}</span>`;
+        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
+            messageEl.content = `Error: ${error}`;
         }
     }
     
@@ -712,10 +690,6 @@ class RXCafeChat {
     
     async handleWizardComplete(e) {
         this.uiManager.handleWizardComplete(e);
-    }
-    
-    copySessionId() {
-        this.uiManager.copySessionId();
     }
     
     toggleInspector() {
