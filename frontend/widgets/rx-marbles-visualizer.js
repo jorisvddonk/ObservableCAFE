@@ -167,12 +167,17 @@ class RxMarblesVisualizer extends LitElement {
         themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
     }
 
+    firstUpdated() {
+        // Initial render - always try to update
+        this.updateDiagram();
+    }
+
     updated(changedProps) {
         const pipelineChanged = changedProps.has('pipeline') || changedProps.has('chunks');
-        this.nomnomlContainer = this.renderRoot.querySelector('.nomnoml-container');
         
-        if (this.nomnomlContainer && pipelineChanged) {
-            this.updateDiagram();
+        if (pipelineChanged) {
+            // Small delay to ensure DOM is ready
+            requestAnimationFrame(() => this.updateDiagram());
         }
     }
 
@@ -212,12 +217,19 @@ class RxMarblesVisualizer extends LitElement {
 
     updateDiagram() {
         if (!window.nomnoml) {
-            this.renderError('NomNoml library not loaded');
+            // Library not loaded yet, retry shortly
+            setTimeout(() => this.updateDiagram(), 100);
             return;
         }
 
         this.nomnomlContainer = this.renderRoot.querySelector('.nomnoml-container');
-        if (!this.nomnomlContainer || this.isRendering) {
+        if (!this.nomnomlContainer) {
+            // Container not ready yet, retry on next frame
+            requestAnimationFrame(() => this.updateDiagram());
+            return;
+        }
+        
+        if (this.isRendering) {
             return;
         }
 

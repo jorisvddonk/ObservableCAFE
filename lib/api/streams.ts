@@ -18,7 +18,9 @@ export function handleSessionStream(sessionId: string): Response {
       
       const outputSub = session.outputStream.subscribe({
         next: (chunk: Chunk) => {
-          if (chunk.contentType === 'text' || chunk.contentType === 'binary') {
+          // Include text, binary, and null chunks with visualization annotations
+          const isVisualization = chunk.contentType === 'null' && chunk.annotations?.['visualizer.type'] === 'rx-marbles';
+          if (chunk.contentType === 'text' || chunk.contentType === 'binary' || isVisualization) {
             try {
               let serializedChunk = chunk;
               if (chunk.contentType === 'binary') {
@@ -27,7 +29,8 @@ export function handleSessionStream(sessionId: string): Response {
                   content: { ...chunk.content, data: Array.from((chunk.content as any).data) }
                 };
               }
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', chunk: serializedChunk })}\n\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', chunk: serializedChunk })}
+\n`));
             } catch (error) {
               console.error('[SSE] Failed to serialize chunk:', chunk.id, error);
             }
