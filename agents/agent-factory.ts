@@ -29,7 +29,7 @@ import { fileURLToPath } from 'url';
 import {
   extractLargestCodeBlock,
   analyzeAgentPipeline
-} from '../lib/agent-code-parser.js';
+} from '../lib/agent-ast-parser.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = join(__dirname, '..', 'agents');
