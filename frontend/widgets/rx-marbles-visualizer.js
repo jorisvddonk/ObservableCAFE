@@ -224,6 +224,7 @@ class RxMarblesVisualizer extends LitElement {
         this.isRendering = true;
         try {
             const noml = this.generateNoml();
+            console.log('[NOMNOML] Source:\n' + noml);
             const svg = window.nomnoml.renderSvg(noml);
             this.nomnomlContainer.innerHTML = svg;
             this.hasRendered = true;
@@ -247,7 +248,7 @@ class RxMarblesVisualizer extends LitElement {
         }
 
         const pipeline = this.pipeline;
-        
+
         // Config directives (each on its own line)
         const config = [
             '#arrowSize: 1',
@@ -267,35 +268,38 @@ class RxMarblesVisualizer extends LitElement {
         ];
 
         // Build the pipeline diagram
-        const nodes = [];
         const operators = pipeline.operators || [];
-        
+
+        // Build the pipeline diagram
+        // Use nomnoml's id attribute to create distinct nodes with same display name
+        // Format: [<type id=id>label] for definition, then [id] for reference
+        const nodeRefs = ['[inputStream]'];
+        const nodeDefs = ['[inputStream]'];
+
         if (operators.length === 0) {
-            nodes.push('[empty]');
+            nodeRefs.push('[empty]');
+            nodeDefs.push('[empty]');
         } else {
-            operators.forEach((op) => {
-                // Use nomnoml's multiline format with | separator
+            operators.forEach((op, index) => {
                 const label = this.formatOperatorLabel(op);
-                nodes.push(`[${label}]`);
+                const nodeId = `op${index}`;
+                // Definition with id attribute: [<operator id=op0>label]
+                nodeDefs.push(`[<operator id=${nodeId}>${label}]`);
+                // Reference: [op0]
+                nodeRefs.push(`[${nodeId}]`);
             });
         }
-        
-        // Config on separate lines, then the diagram
-        const diagram = ['[inputStream]'];
-        
-        nodes.forEach((node) => {
-            diagram.push(node);
-        });
-        
-        diagram.push('[outputStream]');
-        
-        // Connect nodes with arrows
+
+        nodeRefs.push('[outputStream]');
+        nodeDefs.push('[outputStream]');
+
+        // Connect nodes using references
         const connections = [];
-        for (let i = 0; i < diagram.length - 1; i++) {
-            connections.push(diagram[i] + ' -> ' + diagram[i + 1]);
+        for (let i = 0; i < nodeRefs.length - 1; i++) {
+            connections.push(`${nodeRefs[i]} -> ${nodeRefs[i + 1]}`);
         }
-        
-        return config.join('\n') + '\n\n' + connections.join('\n');
+
+        return config.join('\n') + '\n\n' + nodeDefs.join('\n') + '\n' + connections.join('\n');
     }
 
     formatOperatorLabel(op) {
