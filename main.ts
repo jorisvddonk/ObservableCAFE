@@ -1957,6 +1957,14 @@ function getWidgetCss(): string {
   }
 }
 
+function getJsFile(filename: string): string | null {
+  try {
+    return readFileSync(join(__dirname, 'frontend', 'js', filename), 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // HTTP Server
 // =============================================================================
@@ -2026,6 +2034,17 @@ const server = serve({
                            filename.endsWith('.css') ? 'text/css' : 'text/plain';
         return new Response(content, {
           headers: { 'Content-Type': contentType, ...corsHeaders }
+        });
+      }
+    }
+    
+    // JS module files
+    if (pathname.startsWith('/js/')) {
+      const filename = pathname.slice(4); // Remove '/js/'
+      const content = getJsFile(filename);
+      if (content !== null) {
+        return new Response(content, {
+          headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
         });
       }
     }

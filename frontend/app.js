@@ -1,52 +1,11 @@
-/**
- * RXCAFE Chat Frontend
- * Simple chat interface for the RXCAFE API
- * Supports both KoboldCPP and Ollama backends
- * Includes web fetch with trust system
- */
-
-// Theme Manager
-class ThemeManager {
-    constructor() {
-        this.themeToggleBtn = null;
-        this.currentTheme = localStorage.getItem('theme') || 'dark';
-        this.init();
-    }
-
-    init() {
-        this.applyTheme(this.currentTheme);
-    }
-
-    bindElements() {
-        this.themeToggleBtn = document.getElementById('theme-toggle-btn');
-        if (this.themeToggleBtn) {
-            this.themeToggleBtn.addEventListener('click', () => this.toggleTheme());
-            this.updateToggleIcon();
-        }
-    }
-
-    applyTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-        this.currentTheme = theme;
-        this.updateToggleIcon();
-    }
-
-    toggleTheme() {
-        const newTheme = this.currentTheme === 'light' ? 'dark' : 'light';
-        this.applyTheme(newTheme);
-    }
-
-    updateToggleIcon() {
-        if (this.themeToggleBtn) {
-            this.themeToggleBtn.textContent = this.currentTheme === 'light' ? '🌙' : '☀️';
-            this.themeToggleBtn.title = this.currentTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
-        }
-    }
-}
-
-// Global theme manager instance
-const themeManager = new ThemeManager();
+import { ThemeManager } from './js/theme.js';
+import { getToken, apiUrl } from './js/api.js';
+import { autoResize, hideContextMenuOnClick } from './js/dom-utils.js';
+import { StreamingManager } from './js/streaming.js';
+import { RecordingManager } from './js/recording.js';
+import { MessagesManager } from './js/messages.js';
+import { SessionsManager } from './js/sessions.js';
+import { UIManager } from './js/ui.js';
 
 class RXCafeChat {
     constructor() {
@@ -57,51 +16,41 @@ class RXCafeChat {
         this.isBackground = false;
         this.isGenerating = false;
         this.isRecording = false;
-        this.mediaRecorder = null;
-        this.recordedChunks = [];
-        this.recordingStartTime = null;
         this.currentMessageEl = null;
         this.currentContent = '';
         this.chunkElements = new Map();
-        this.rawChunks = []; this._elCounter = 0;
+        this.rawChunks = [];
+        this._elCounter = 0;
         this.contextMenuChunkId = null;
-        this.token = this.getToken();
+        this.token = getToken();
         this.inspectorVisible = false;
         this.agents = [];
         this.knownSessions = [];
-        this.eventSource = null;
-        this._reconnectTimer = null;
+        
+        this._pendingUserMsg = null;
+        this._lastAssistantEl = null;
+        
+        this.themeManager = new ThemeManager();
+        this.streamingManager = new StreamingManager(this);
+        this.recordingManager = new RecordingManager(this);
+        this.messagesManager = new MessagesManager(this);
+        this.sessionsManager = new SessionsManager(this);
+        this.uiManager = new UIManager(this);
         
         this.init();
     }
     
-    // Get token from injected script or URL params
-    getToken() {
-        // First check for injected token from server
-        if (window.RXCAFE_TOKEN) {
-            return window.RXCAFE_TOKEN;
-        }
-        // Fallback to URL query param
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get('token');
-    }
-    
-    // Build API URL with token
     apiUrl(path) {
-        const url = new URL(path, window.location.origin);
-        if (this.token) {
-            url.searchParams.set('token', this.token);
-        }
-        return url.toString();
+        return apiUrl(path, this.token);
     }
     
     init() {
-        this.cacheElements();
-        themeManager.bindElements();
-        this.bindEvents();
-        this.autoResize();
-        this.hideContextMenuOnClick();
-        this.loadSessionsOnStart();
+        this.uiManager.cacheElements();
+        this.themeManager.bindElements();
+        this.uiManager.bindEvents();
+        autoResize(this.messageInput);
+        hideContextMenuOnClick(this.contextMenu);
+        this.sessionsManager.loadSessions();
 
         window.addEventListener('hashchange', () => this.handleHashChange());
     }
@@ -110,253 +59,10 @@ class RXCafeChat {
         const hashId = window.location.hash.substring(1);
         if (hashId && hashId !== this.sessionId) {
             console.log(`[RXCAFE] Hash changed to ${hashId}, switching...`);
-            this.switchToSession(hashId);
+            this.sessionsManager.switchToSession(hashId);
         }
     }
-    
-    async loadSessionsOnStart() {
-        await this.loadSessions();
-    }
-    
-    cacheElements() {
-        this.backendInfoEl = document.getElementById('backend-info');
-        this.newSessionBtn = document.getElementById('new-session-btn');
-        this.messagesEl = document.getElementById('messages');
-        this.messageInput = document.getElementById('message-input');
-        this.sendBtn = document.getElementById('send-btn');
-        this.abortBtn = document.getElementById('abort-btn');
-        this.microphoneBtn = document.getElementById('microphone-btn');
-        this.copySessionIdBtn = document.getElementById('copy-session-id-btn');
-        
-        // Modal elements - Wizard
-        this.wizardModal = document.getElementById('wizard-modal');
-        this.sessionWizard = document.getElementById('session-wizard');
-        
-        // Legacy modal elements (kept for backward compatibility)
-        this.backendModal = document.getElementById('backend-modal');
-        this.createSessionBtn = document.getElementById('create-session-btn');
-        this.cancelBtn = document.getElementById('cancel-btn');
-        this.backendRadios = document.querySelectorAll('input[name="backend"]');
-        this.ollamaModelSection = document.getElementById('ollama-model-section');
-        this.ollamaModelSelect = document.getElementById('ollama-model');
-        
-        // Agent elements
-        this.agentSelect = document.getElementById('agent-select');
-        this.agentDescription = document.getElementById('agent-description');
-        
-        // Advanced options
-        this.temperatureInput = document.getElementById('temperature');
-        this.maxTokensInput = document.getElementById('max-tokens');
-        this.systemPromptInput = document.getElementById('system-prompt');
-        
-        // Context menu
-        this.contextMenu = document.getElementById('context-menu');
-        this.contextTrust = document.getElementById('context-trust');
-        this.contextUntrust = document.getElementById('context-untrust');
-        this.contextCopy = document.getElementById('context-copy');
-        
-        // Inspector elements
-        this.inspectorPanel = document.getElementById('inspector-panel');
-        this.inspectorOverlay = document.getElementById('inspector-overlay');
-        this.inspectorToggleBtn = document.getElementById('inspector-toggle-btn');
-        this.inspectorCloseBtn = document.getElementById('inspector-close-btn');
-        this.inspectorSession = document.getElementById('inspector-session');
-        this.inspectorChunkCount = document.getElementById('inspector-chunk-count');
-        this.inspectorChunks = document.getElementById('inspector-chunks');
 
-        // Sessions management elements
-        this.sessionsModal = document.getElementById('sessions-modal');
-        this.sessionList = document.getElementById('session-list');
-        this.manageSessionsBtn = document.getElementById('manage-sessions-btn');
-        this.sessionsCloseBtn = document.getElementById('sessions-close-btn');
-
-        // Sessions sidebar elements
-        this.sessionsSidebar = document.getElementById('sessions-sidebar');
-        this.sessionsSidebarOverlay = document.getElementById('sessions-sidebar-overlay');
-        this.sessionsSidebarToggleBtn = document.getElementById('sessions-sidebar-toggle-btn');
-        this.sessionsSidebarCloseBtn = document.getElementById('sessions-sidebar-close-btn');
-        this.sidebarSessionList = document.getElementById('sidebar-session-list');
-        this.sidebarNewSessionBtn = document.getElementById('sidebar-new-session-btn');
-
-        // Sidebar global actions (mobile)
-        this.sidebarThemeToggleBtn = document.getElementById('sidebar-theme-toggle-btn');
-        this.sidebarManageSessionsBtn = document.getElementById('sidebar-manage-sessions-btn');
-
-        // Sidebar menu elements
-        this.sidebarMenu = document.getElementById('sidebar-menu');
-        this.sidebarMenuRename = document.getElementById('sidebar-menu-rename');
-        this.sidebarMenuDelete = document.getElementById('sidebar-menu-delete');
-        this.sidebarMenuSessionId = null;
-    }
-
-    bindEvents() {
-        this.newSessionBtn.addEventListener('click', () => this.showWizardModal());
-        
-        // Legacy event bindings (kept for fallback)
-        if (this.createSessionBtn) {
-            this.createSessionBtn.addEventListener('click', () => this.createSession());
-        }
-        if (this.cancelBtn) {
-            this.cancelBtn.addEventListener('click', () => this.hideWizardModal());
-        }
-        
-        this.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.abortBtn.addEventListener('click', () => this.abortGeneration());
-        this.copySessionIdBtn.addEventListener('click', () => this.copySessionId());
-        this.microphoneBtn.addEventListener('click', () => this.toggleRecording());
-        
-        this.messageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.sendMessage();
-            }
-        });
-        
-        // Legacy handlers (for fallback modal)
-        
-        // Context menu actions
-        this.contextTrust.addEventListener('click', () => this.toggleTrust(true));
-        this.contextUntrust.addEventListener('click', () => this.toggleTrust(false));
-        this.contextCopy.addEventListener('click', () => this.copyChunkContent());
-        
-        // Inspector events
-        this.inspectorToggleBtn.addEventListener('click', () => this.toggleInspector());
-        this.inspectorCloseBtn.addEventListener('click', () => this.hideInspector());
-        if (this.inspectorOverlay) {
-            this.inspectorOverlay.addEventListener('click', () => this.hideInspector());
-        }
-
-        // Sessions management events
-        this.manageSessionsBtn.addEventListener('click', () => this.showSessionsModal());
-        this.sessionsCloseBtn.addEventListener('click', () => this.hideSessionsModal());
-
-        // Sessions sidebar events
-        this.sessionsSidebarToggleBtn.addEventListener('click', () => this.toggleSessionsSidebar());
-        this.sessionsSidebarCloseBtn.addEventListener('click', () => this.hideSessionsSidebar());
-        if (this.sessionsSidebarOverlay) {
-            this.sessionsSidebarOverlay.addEventListener('click', () => this.hideSessionsSidebar());
-        }
-        this.sidebarNewSessionBtn.addEventListener('click', () => {
-            this.hideSessionsSidebar();
-            this.showWizardModal();
-        });
-
-        if (this.sidebarThemeToggleBtn) {
-            this.sidebarThemeToggleBtn.addEventListener('click', () => themeManager.toggleTheme());
-        }
-        if (this.sidebarManageSessionsBtn) {
-            this.sidebarManageSessionsBtn.addEventListener('click', () => {
-                this.hideSessionsSidebar();
-                this.showSessionsModal();
-            });
-        }
-
-        // Sidebar menu events
-        this.sidebarMenuRename.addEventListener('click', () => this.renameSessionFromMenu());
-        this.sidebarMenuDelete.addEventListener('click', () => this.deleteSessionFromMenu());
-        
-        // Close menus on click outside
-        document.addEventListener('click', (e) => {
-            if (this.sidebarMenu.style.display === 'block' && !e.target.closest('.sidebar-session-more-btn') && !this.sidebarMenu.contains(e.target)) {
-                this.hideSidebarMenu();
-            }
-        });
-
-        // Initial sidebar state based on screen width
-        if (window.innerWidth > 800) {
-            this.showSessionsSidebar();
-        }
-    }
-    
-    hideContextMenuOnClick() {
-        document.addEventListener('click', (e) => {
-            if (!this.contextMenu.contains(e.target)) {
-                this.hideContextMenu();
-            }
-        });
-    }
-    
-    showContextMenu(e, chunkId) {
-        e.preventDefault();
-        this.contextMenuChunkId = chunkId;
-        
-        // Get the chunk element to check trust status
-        const chunkEl = this.chunkElements.get(chunkId);
-        if (chunkEl) {
-            const isTrusted = chunkEl.classList.contains('trusted');
-            this.contextTrust.style.display = isTrusted ? 'none' : 'block';
-            this.contextUntrust.style.display = isTrusted ? 'block' : 'none';
-        }
-        
-        this.contextMenu.style.display = 'block';
-        this.contextMenu.style.left = `${e.pageX}px`;
-        this.contextMenu.style.top = `${e.pageY}px`;
-    }
-    
-    hideContextMenu() {
-        this.contextMenu.style.display = 'none';
-        this.contextMenuChunkId = null;
-    }
-    
-    async toggleTrust(trusted) {
-        if (!this.contextMenuChunkId || !this.sessionId) return;
-        
-        try {
-            const response = await fetch(this.apiUrl(`/api/session/${this.sessionId}/chunk/${this.contextMenuChunkId}/trust`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ trusted })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
-                if (chunkEl) {
-                    chunkEl.classList.remove('trusted', 'untrusted');
-                    chunkEl.classList.add(trusted ? 'trusted' : 'untrusted');
-                    
-                    // Update trust badge
-                    const badge = chunkEl.querySelector('.trust-badge');
-                    if (badge) {
-                        badge.textContent = trusted ? 'Trusted' : 'Untrusted';
-                        badge.className = `trust-badge ${trusted ? 'trusted' : 'untrusted'}`;
-                    }
-                }
-                
-                const rawChunk = this.rawChunks.find(c => c.id === this.contextMenuChunkId);
-                if (rawChunk) {
-                    rawChunk.annotations = rawChunk.annotations || {};
-                    rawChunk.annotations['security.trust-level'] = {
-                        trusted: trusted,
-                        source: rawChunk.annotations['security.trust-level']?.source || 'manual',
-                        requiresReview: !trusted
-                    };
-                    if (this.inspectorVisible) {
-                        this.updateInspector();
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to toggle trust:', error);
-            this.showError('Failed to update trust status');
-        }
-        
-        this.hideContextMenu();
-    }
-    
-    copyChunkContent() {
-        if (!this.contextMenuChunkId) return;
-        
-        const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
-        if (chunkEl) {
-            const content = chunkEl.querySelector('.message-content')?.textContent || '';
-            navigator.clipboard.writeText(content).then(() => {
-                this.hideContextMenu();
-            });
-        }
-    }
-    
     async loadOllamaModels(backend) {
         if (!backend) return;
         
@@ -383,23 +89,13 @@ class RXCafeChat {
         }
     }
     
-    autoResize() {
-        this.messageInput.addEventListener('input', () => {
-            this.messageInput.style.height = 'auto';
-            this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 200) + 'px';
-        });
-    }
-    
     async showBackendModal() {
-        // Fallback: use wizard modal if available
         if (this.wizardModal) {
-            this.showWizardModal();
+            this.uiManager.showWizardModal();
             return;
         }
         this.backendModal.style.display = 'flex';
-        
-        // Load agents and sessions
-        await Promise.all([this.loadAgents(), this.loadSessions()]);
+        await Promise.all([this.sessionsManager.loadAgents(), this.sessionsManager.loadSessions()]);
         
         const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value;
         if (selectedBackend === 'ollama') {
@@ -408,634 +104,11 @@ class RXCafeChat {
     }
     
     async showWizardModal() {
-        if (!this.wizardModal || !this.sessionWizard) {
-            // Fallback to old modal
-            this.showBackendModal();
-            return;
-        }
-        
-        this.wizardModal.style.display = 'flex';
-        
-        // Load agents
-        await this.loadAgents();
-        
-        // Reset wizard state
-        if (this.sessionWizard.reset) {
-            this.sessionWizard.reset();
-        }
-        
-        // Pass agents and API URL to wizard
-        this.sessionWizard.agents = this.agents;
-        this.sessionWizard.apiUrl = this.apiUrl('');
-        
-        // Wire up wizard events
-        this.sessionWizard.addEventListener('afe-wizard-complete', (e) => this.handleWizardComplete(e));
-        this.sessionWizard.addEventListener('afe-wizard-close', () => this.hideWizardModal());
+        await this.uiManager.showWizardModal();
     }
     
     hideWizardModal() {
-        if (this.wizardModal) {
-            this.wizardModal.style.display = 'none';
-        }
-    }
-    
-    async handleWizardComplete(e) {
-        const { agentId, config } = e.detail;
-        
-        this.hideWizardModal();
-        await this.createSessionFromWizard(agentId, config);
-        
-        // Reset wizard for next time
-        if (this.sessionWizard.reset) {
-            this.sessionWizard.reset();
-        }
-    }
-    
-    async createSessionFromWizard(agentId, config) {
-        const { backend, model, systemPrompt, llmParams, ...restConfig } = config;
-        
-        try {
-            const response = await fetch(this.apiUrl('/api/session'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    backend: backend,
-                    model: model,
-                    agentId: agentId,
-                    llmParams: llmParams,
-                    systemPrompt: systemPrompt,
-                    ...restConfig
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.sessionId) {
-                // Add to known sessions
-                const existingIndex = this.knownSessions.findIndex(s => s.id === data.sessionId);
-                if (existingIndex === -1) {
-                    this.knownSessions.push({
-                        id: data.sessionId,
-                        agentName: data.agentName,
-                        isBackground: data.isBackground
-                    });
-                }
-                
-                // Use switchToSession to properly load history, render chunks, update UI
-                await this.switchToSession(data.sessionId);
-                
-                // Add welcome messages after switchToSession completes
-                this.addSystemMessage(`Session created: ${this.agentName}`);
-                if (backend) {
-                    this.addSystemMessage(`Backend: ${backend}${model ? ' (' + model + ')' : ''}`);
-                }
-                this.addSystemMessage('Commands: /web URL | /system prompt | /addchunk JSON');
-                
-                this.messageInput.focus();
-            }
-        } catch (error) {
-            console.error('Failed to create session:', error);
-            this.showError('Failed to create session. Is the server running?');
-        }
-    }
-    
-    async loadAgents() {
-        try {
-            const response = await fetch(this.apiUrl('/api/agents'));
-            const data = await response.json();
-            
-            if (data.agents && data.agents.length > 0) {
-                this.agents = data.agents;
-                
-                // If using old modal, populate the select
-                if (this.agentSelect) {
-                    this.agentSelect.innerHTML = data.agents
-                        .map(a => `<option value="${a.name}">${a.name}${a.startInBackground ? ' (background)' : ''}</option>`)
-                        .join('');
-                    
-                    // Select default agent and show description
-                    const defaultAgent = data.agents.find(a => a.name === 'default') || data.agents[0];
-                    if (defaultAgent) {
-                        this.agentSelect.value = defaultAgent.name;
-                        this.agentDescription.textContent = defaultAgent.description || '';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load agents:', error);
-            if (this.agentSelect) {
-                this.agentSelect.innerHTML = '<option value="default">default</option>';
-            }
-        }
-    }
-    
-    async loadSessions() {
-        console.log('[RXCAFE] loadSessions called');
-        try {
-            const response = await fetch(this.apiUrl('/api/sessions'));
-            const data = await response.json();
-            console.log('[RXCAFE] loadSessions data:', data);
-            
-            if (data.sessions) {
-                this.knownSessions = data.sessions;
-                
-                // Render sidebar list automatically if sessions exist
-                this.renderSidebarSessionList();
-
-                if (this.sessionsModal.style.display === 'flex') {
-                    console.log('[RXCAFE] Updating session list in modal');
-                    this.renderSessionList();
-                }
-                
-                // Auto-connect: check hash first, then most recent non-background
-                if (!this.sessionId && data.sessions.length > 0) {
-                    const hashId = window.location.hash.substring(1);
-                    const sessionInHash = data.sessions.find(s => s.id === hashId);
-                    
-                    if (sessionInHash) {
-                        console.log(`[RXCAFE] Auto-connecting to session from URL hash: ${hashId}`);
-                        await this.switchToSession(hashId);
-                    } else {
-                        const recentSession = data.sessions.find(s => !s.isBackground) || data.sessions[0];
-                        if (recentSession) {
-                            await this.switchToSession(recentSession.id);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load sessions:', error);
-        }
-    }
-    
-    async switchToSession(sessionId) {
-        console.log(`[RXCAFE] switchToSession: ${sessionId}`);
-        this.disconnectStream();
-
-        // Update URL hash
-        if (window.location.hash.substring(1) !== sessionId) {
-            window.location.hash = sessionId;
-        }
-
-        try {
-            console.log(`[RXCAFE] Fetching history for ${sessionId}...`);
-            const response = await fetch(this.apiUrl(`/api/session/${sessionId}/history`));
-            const data = await response.json();
-            console.log(`[RXCAFE] History response:`, data.sessionId, `chunks:`, data.chunks?.length ?? 0);
-            
-            if (data.sessionId) {
-                this.sessionId = data.sessionId;
-                
-                const sessionInfo = this.knownSessions.find(s => s.id === sessionId);
-                if (sessionInfo) {
-                    this.agentName = sessionInfo.agentName;
-                    this.isBackground = sessionInfo.isBackground;
-                    if (data.displayName) sessionInfo.displayName = data.displayName;
-                }
-                
-                // Extract runtime config from history chunks
-                let backend = null;
-                let model = null;
-                if (data.chunks) {
-                    for (let i = data.chunks.length - 1; i >= 0; i--) {
-                        const chunk = data.chunks[i];
-                        if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
-                            backend = chunk.annotations['config.backend'];
-                            model = chunk.annotations['config.model'];
-                            break;
-                        }
-                    }
-                }
-                this.backend = backend;
-                this.model = model;
-                
-                const info = [];
-                info.push(data.displayName || this.agentName || 'unknown');
-                if (backend) info.push(backend);
-                if (model) info.push(model);
-                if (this.isBackground) info.push('[background]');
-                this.backendInfoEl.textContent = info.join(' | ');
-                
-                this.messagesEl.innerHTML = '';
-                this.chunkElements.clear();
-                this.rawChunks = [];
-                
-                if (data.chunks && data.chunks.length > 0) {
-                    console.log(`[RXCAFE] Rendering ${data.chunks.length} history chunks`);
-                    for (const chunk of data.chunks) {
-                        this.addRawChunk(chunk);
-                        this.renderChunk(chunk);
-                    }
-                }
-                
-                this.updateUIState();
-                this.updateInspector();
-                this.renderSidebarSessionList();
-
-                // Connect SSE stream for live updates
-                this.connectStream(sessionId);
-            }
-        } catch (error) {
-            console.error('[RXCAFE] Failed to switch session:', error);
-            this.showError('Failed to switch session');
-        }
-    }
-
-    connectStream(sessionId) {
-        console.log(`[RXCAFE] connectStream: ${sessionId}`);
-        this.disconnectStream();
-
-        const url = this.apiUrl(`/api/session/${sessionId}/stream`);
-        console.log(`[RXCAFE] Opening EventSource: ${url}`);
-        const es = new EventSource(url);
-        this.eventSource = es;
-
-        es.onopen = () => {
-            console.log(`[RXCAFE] SSE connected for session ${sessionId}`);
-        };
-
-        es.onmessage = (event) => {
-            console.log(`[RXCAFE] SSE raw event:`, event.data.slice(0, 120));
-            try {
-                const data = JSON.parse(event.data);
-                console.log(`[RXCAFE] SSE parsed type="${data.type}"`, data.type === 'chunk' ? `id=${data.chunk?.id}` : '');
-
-                if (data.type === 'chunk') {
-                    const chunk = data.chunk;
-                    const role = chunk.annotations?.['chat.role'];
-
-                    // Check for runtime config chunk
-                    if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
-                        this.backend = chunk.annotations['config.backend'] || this.backend;
-                        this.model = chunk.annotations['config.model'] || this.model;
-                        console.log(`[RXCAFE] Runtime config updated: backend=${this.backend}, model=${this.model}`);
-                        
-                        // Update header
-                        const session = this.knownSessions.find(s => s.id === this.sessionId);
-                        const info = [];
-                        info.push(session?.displayName || this.agentName || 'unknown');
-                        if (this.backend) info.push(this.backend);
-                        if (this.model) info.push(this.model);
-                        if (this.isBackground) info.push('[background]');
-                        this.backendInfoEl.textContent = info.join(' | ');
-                    }
-
-                    // Check for session naming annotation
-                    if (chunk.annotations?.['session.name']) {
-                        const newName = chunk.annotations['session.name'];
-                        console.log(`[RXCAFE] Session renamed to: ${newName}`);
-                        const session = this.knownSessions.find(s => s.id === this.sessionId);
-                        if (session) {
-                            session.displayName = newName;
-                            
-                            // Update Sidebar if visible
-                            if (this.sessionsSidebar.style.display === 'flex') {
-                                this.renderSidebarSessionList();
-                            }
-                            
-                            // Update header info if it's the current session
-                            const info = [];
-                            info.push(newName);
-                            if (this.backend) info.push(this.backend);
-                            if (this.model) info.push(this.model);
-                            if (this.isBackground) info.push('[background]');
-                            this.backendInfoEl.textContent = info.join(' | ');
-                        }
-                    }
-
-                    if (this.chunkElements.has(chunk.id)) {
-                        const el = this.chunkElements.get(chunk.id);
-                        if (el) {
-                            console.log(`[RXCAFE] SSE: Updating existing chunk UI:`, chunk.id);
-                            
-                            // 1. Sync annotations (like sentiment)
-                            if (chunk.annotations['com.rxcafe.example.sentiment']) {
-                                this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
-                            }
-                            
-                            // 2. Sync text content if it changed (e.g. tool results)
-                            if (chunk.contentType === 'text' && !el.classList.contains('streaming')) {
-                                this.updateMessageContent(el, chunk.content, chunk.annotations);
-                                
-                                // Re-append sentiment if it was there
-                                const contentEl = el.querySelector('.message-content');
-                                if (chunk.annotations['com.rxcafe.example.sentiment']) {
-                                    this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
-                                }
-                            }
-                        }
-                        this.addRawChunk(chunk);
-                        return;
-                    }
-
-                    // Check if this matches a pending eagerly-rendered element
-                    if (role === 'user' && this._pendingUserMsg) {
-                        console.log(`[RXCAFE] SSE user chunk claimed by pending element elId=${this._pendingUserMsg.dataset.elId}, registering id:`, chunk.id);
-                        this._pendingUserMsg.dataset.chunkId = chunk.id;
-                        this.chunkElements.set(chunk.id, this._pendingUserMsg);
-                        
-                        // Display sentiment if present
-                        if (chunk.annotations['com.rxcafe.example.sentiment']) {
-                            this.updateSentiment(this._pendingUserMsg, chunk.annotations['com.rxcafe.example.sentiment']);
-                        }
-
-                        this._pendingUserMsg = null;
-                        this.addRawChunk(chunk);
-                        this.updateInspector();
-                        return;
-                    }
-
-                    const isFromConnectedAgent = chunk.producer?.startsWith('com.observablecafe.connected-agent');
-
-                    const assistantEl = (this.currentMessageEl?.dataset.pendingAssistant ? this.currentMessageEl : null) 
-                                        || (this._lastAssistantEl?.dataset.pendingAssistant ? this._lastAssistantEl : null);
-
-                    if (role === 'assistant' && assistantEl && chunk.contentType === 'text' && !isFromConnectedAgent) {
-                        console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
-                        assistantEl.dataset.chunkId = chunk.id;
-                        this.chunkElements.set(chunk.id, assistantEl);
-                        assistantEl.dataset.annotations = JSON.stringify(chunk.annotations || {});
-                        this.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
-                        delete assistantEl.dataset.pendingAssistant;
-                        if (assistantEl === this._lastAssistantEl) this._lastAssistantEl = null;
-                        this.addRawChunk(chunk);
-                        this.updateInspector();
-                        return;
-                    }
-
-                    console.log(`[RXCAFE] New chunk from stream, rendering:`, chunk.id, chunk.contentType, chunk.content?.mimeType);
-                    this.addRawChunk(chunk);
-                    this.renderChunk(chunk);
-                    this.updateInspector();
-                }
-            } catch (e) {
-                console.error('[RXCAFE] SSE parse error:', e, event.data);
-            }
-        };
-
-        es.onerror = (err) => {
-            // Guard: ignore stale closures from replaced connections
-            if (es !== this.eventSource) return;
-
-            console.warn(`[RXCAFE] SSE error/disconnect for session ${sessionId}`, err);
-            es.close();
-            this.eventSource = null;
-
-            if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
-            this._reconnectTimer = setTimeout(() => {
-                this._reconnectTimer = null;
-                if (this.sessionId === sessionId) {
-                    console.log(`[RXCAFE] Reconnecting SSE for ${sessionId}...`);
-                    this.connectStream(sessionId);
-                }
-            }, 3000);
-        };
-    }
-
-    disconnectStream() {
-        if (this._reconnectTimer) {
-            clearTimeout(this._reconnectTimer);
-            this._reconnectTimer = null;
-        }
-        if (this.eventSource) {
-            console.log(`[RXCAFE] disconnectStream: closing EventSource`);
-            this.eventSource.close();
-            this.eventSource = null;
-        }
-    }
-    
-    renderChunk(chunk) {
-        const role = chunk.annotations?.['chat.role'];
-        const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
-        const isSystem = role === 'system';
-        const isTelegram = chunk.annotations?.['client.type'] === 'telegram';
-        const isVisualization = chunk.annotations?.['visualizer.type'] === 'rx-marbles';
-        
-        // Skip purely metadata chunks (like session naming) if they don't have a role
-        if (!role && chunk.annotations?.['session.name']) {
-            this.chunkElements.set(chunk.id, null); // Mark as processed
-            return;
-        }
-        
-        // Handle visualization chunks
-        if (isVisualization) {
-            this.addVisualizationMessage(chunk);
-            return;
-        }
-
-        console.log(`[RXCAFE] renderChunk (from ${new Error().stack.split('\n')[2].trim()}) id=${chunk.id} role=${role} content="${String(chunk.content ?? '').slice(0,60)}"`);
-        
-        if (chunk.contentType === 'binary') {
-            const mimeType = chunk.content?.mimeType || '';
-            console.log(`[RXCAFE] Rendering binary chunk, mimeType: ${mimeType}, role: ${role}`);
-            if (mimeType.startsWith('image/')) {
-                console.log('[RXCAFE] Calling addImageMessage');
-                this.addImageMessage(role || 'assistant', chunk);
-            } else if (mimeType.startsWith('audio/')) {
-                console.log('[RXCAFE] Calling addAudioMessage');
-                this.addAudioMessage(role || 'assistant', chunk);
-            } else {
-                console.warn('[RXCAFE] Unsupported binary chunk', chunk);
-            }
-            return;
-        }
-
-        if (isWeb) {
-            this.addWebChunk(chunk);
-        } else if (isSystem) {
-            this.addSystemChunk(chunk, chunk.content);
-        } else if (chunk.contentType === 'text') {
-            if (role === 'user') {
-                const el = this.addMessage('user', chunk.content, chunk.id, chunk.annotations);
-                
-                // Show Telegram origin
-                if (isTelegram) {
-                    this.addTelegramLabel(el);
-                }
-
-                // Handle sentiment for history chunks
-                if (chunk.annotations && chunk.annotations['com.rxcafe.example.sentiment']) {
-                    this.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
-                }
-            } else             if (role === 'assistant') {
-                // Check if this is a tool call result
-                if (chunk.annotations?.['tool.name']) {
-                    this.addToolCallMessage(chunk);
-                } else {
-                    const el = this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
-                    // If tool call detected but not yet executed, show indicator
-                    if (chunk.annotations?.['com.rxcafe.tool-detection']?.hasToolCalls) {
-                        this.addToolCallIndicator(el, chunk.annotations['com.rxcafe.tool-detection'].toolCalls);
-                    }
-                }
-            }
-        }
-    }
-
-    addVisualizationMessage(chunk) {
-        const messageEl = document.createElement('div');
-        this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = 'message assistant visualization';
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const headerEl = document.createElement('div');
-        headerEl.className = 'visualization-header';
-        
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'visualization-icon';
-        iconSpan.textContent = '📊';
-        
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'visualization-title';
-        titleSpan.textContent = `RxMarbles Visualization: ${chunk.annotations['visualizer.agent']}`;
-        
-        headerEl.appendChild(iconSpan);
-        headerEl.appendChild(titleSpan);
-        contentEl.appendChild(headerEl);
-        
-        // Create visualization container
-        const vizContainer = document.createElement('div');
-        vizContainer.className = 'visualization-container';
-        vizContainer.style.cssText = `
-            width: 100%;
-            height: 400px;
-            margin-top: 0.5rem;
-            border-radius: 0.5rem;
-            overflow: hidden;
-        `;
-        
-        // Add RxMarbles visualizer
-        const visualizer = document.createElement('rx-marbles-visualizer');
-        visualizer.pipeline = chunk.annotations['visualizer.pipeline'];
-        visualizer.chunks = this.rawChunks;
-        vizContainer.appendChild(visualizer);
-        
-        contentEl.appendChild(vizContainer);
-        
-        messageEl.appendChild(contentEl);
-        
-        // Right-click context menu
-        messageEl.addEventListener('contextmenu', (e) => this.showContextMenu(e, chunk.id));
-        
-        this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
-        this.scrollToBottom();
-    }
-
-    addTelegramLabel(messageEl) {
-        if (!messageEl) return;
-        let labelEl = messageEl.querySelector('.telegram-label');
-        if (!labelEl) {
-            labelEl = document.createElement('div');
-            labelEl.className = 'message-meta telegram-label';
-            labelEl.textContent = 'via Telegram';
-            labelEl.style.fontSize = '0.65rem';
-            labelEl.style.marginTop = '0.2rem';
-            labelEl.style.fontStyle = 'italic';
-            labelEl.style.textAlign = 'right';
-            labelEl.style.opacity = '0.8';
-            messageEl.querySelector('.message-content').appendChild(labelEl);
-        }
-    }
-
-    addToolCallMessage(chunk) {
-        const toolName = chunk.annotations?.['tool.name'];
-        const toolResult = chunk.annotations?.['tool.results'];
-        const toolDetection = chunk.annotations?.['com.rxcafe.tool-detection'];
-
-        const messageEl = document.createElement('div');
-        this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = 'message assistant tool-call';
-
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-
-        const headerEl = document.createElement('div');
-        headerEl.className = 'tool-call-header';
-
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'tool-icon';
-        iconSpan.textContent = '🔧';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'tool-name';
-        nameSpan.textContent = toolName || 'Unknown Tool';
-
-        headerEl.appendChild(iconSpan);
-        headerEl.appendChild(nameSpan);
-
-        contentEl.appendChild(headerEl);
-
-        // Show the original tool call if detected
-        if (toolDetection?.toolCalls?.length > 0) {
-            const toolCall = toolDetection.toolCalls[0];
-            const paramsEl = document.createElement('div');
-            paramsEl.className = 'tool-params';
-            paramsEl.textContent = JSON.stringify(toolCall.parameters, null, 2);
-            contentEl.appendChild(paramsEl);
-        }
-
-        // Show the result
-        if (toolResult !== undefined) {
-            const resultEl = document.createElement('div');
-            resultEl.className = 'tool-result';
-            resultEl.textContent = typeof toolResult === 'object' 
-                ? JSON.stringify(toolResult, null, 2)
-                : String(toolResult);
-            contentEl.appendChild(resultEl);
-        }
-
-        // Also show the text content if present (formatted result from tool-executor)
-        if (chunk.content) {
-            const textEl = document.createElement('div');
-            textEl.className = 'message-body';
-            textEl.style.marginTop = '0.5rem';
-            textEl.textContent = chunk.content;
-            contentEl.appendChild(textEl);
-        }
-
-        messageEl.appendChild(contentEl);
-
-        // Right-click context menu
-        messageEl.addEventListener('contextmenu', (e) => this.showContextMenu(e, chunk.id));
-
-        this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
-        this.scrollToBottom();
-    }
-
-    addToolCallIndicator(messageEl, toolCalls) {
-        if (!messageEl || !toolCalls?.length) return;
-
-        let metaEl = messageEl.querySelector('.message-meta');
-        if (!metaEl) {
-            metaEl = document.createElement('div');
-            metaEl.className = 'message-meta';
-            const contentEl = messageEl.querySelector('.message-content');
-            if (contentEl) {
-                contentEl.appendChild(metaEl);
-            }
-        }
-
-        toolCalls.forEach((toolCall, idx) => {
-            const toolIndicator = document.createElement('div');
-            toolIndicator.className = 'tool-call-indicator';
-            toolIndicator.style.cssText = 'font-size: 0.7rem; margin-top: 0.4rem; padding: 0.4rem; background-color: rgba(139, 92, 246, 0.1); border-radius: 0.25rem; color: #8b5cf6;';
-
-            let paramsText = '';
-            if (toolCall.parameters && Object.keys(toolCall.parameters).length > 0) {
-                paramsText = ` → ${JSON.stringify(toolCall.parameters)}`;
-            }
-
-            toolIndicator.innerHTML = `<span style="margin-right: 0.25rem;">🔧</span>${toolCall.name}${paramsText}`;
-            metaEl.appendChild(toolIndicator);
-        });
+        this.uiManager.hideWizardModal();
     }
     
     hideBackendModal() {
@@ -1051,7 +124,6 @@ class RXCafeChat {
         const selectedModel = selectedBackend === 'ollama' ? this.ollamaModelSelect.value : undefined;
         const selectedAgent = this.agentSelect.value || 'default';
         
-        // Get advanced options
         const temperature = this.temperatureInput.value ? parseFloat(this.temperatureInput.value) : undefined;
         const maxTokens = this.maxTokensInput.value ? parseInt(this.maxTokensInput.value) : undefined;
         const systemPrompt = this.systemPromptInput.value.trim() || undefined;
@@ -1060,50 +132,14 @@ class RXCafeChat {
         if (temperature !== undefined) llmParams.temperature = temperature;
         if (maxTokens !== undefined) llmParams.maxTokens = maxTokens;
         
-        try {
-            const response = await fetch(this.apiUrl('/api/session'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    backend: selectedBackend,
-                    model: selectedModel,
-                    agentId: selectedAgent,
-                    llmParams,
-                    systemPrompt
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.sessionId) {
-                this.hideBackendModal();
-                
-                // Add to known sessions
-                const existingIndex = this.knownSessions.findIndex(s => s.id === data.sessionId);
-                if (existingIndex === -1) {
-                    this.knownSessions.push({
-                        id: data.sessionId,
-                        agentName: data.agentName,
-                        isBackground: data.isBackground
-                    });
-                }
-                
-                // Use switchToSession to properly load history, render chunks, update UI
-                await this.switchToSession(data.sessionId);
-                
-                // Add welcome messages after switchToSession completes
-                this.addSystemMessage(`Session created: ${this.agentName}`);
-                if (selectedBackend) {
-                    this.addSystemMessage(`Backend: ${selectedBackend}${selectedModel ? ' (' + selectedModel + ')' : ''}`);
-                }
-                this.addSystemMessage('Commands: /web URL | /system prompt | /addchunk JSON');
-                
-                this.messageInput.focus();
-            }
-        } catch (error) {
-            console.error('Failed to create session:', error);
-            this.showError('Failed to create session. Is the server running?');
-        }
+        await this.sessionsManager.createSession(selectedAgent, {
+            backend: selectedBackend,
+            model: selectedModel,
+            llmParams,
+            systemPrompt
+        });
+        
+        this.hideBackendModal();
     }
     
     async sendMessage() {
@@ -1115,7 +151,6 @@ class RXCafeChat {
         const message = this.messageInput.value.trim();
         if (!message || this.isGenerating) return;
         
-        // Check for slash commands
         if (message.startsWith('/web ')) {
             const url = message.slice(5).trim();
             await this.handleWebCommand(url);
@@ -1143,9 +178,7 @@ class RXCafeChat {
             return;
         }
         
-        // Regular message - render eagerly but mark as pending so SSE dedup works.
-        // We don't know the real chunk id yet; use a sentinel that SSE will overwrite.
-        this._pendingUserMsg = this.createMessageElement('user', message);
+        this._pendingUserMsg = this.messagesManager.addMessage('user', message);
         this._pendingUserMsg.dataset.pendingUser = 'true';
         this.messagesEl.appendChild(this._pendingUserMsg);
         this.scrollToBottom();
@@ -1153,17 +186,14 @@ class RXCafeChat {
         this.messageInput.style.height = 'auto';
         this.messageInput.focus();
         
-        // Start generation
         this.isGenerating = true;
         this.updateUIState();
         
-        // Create streaming message container - mark as pending so SSE skips it
         this.currentMessageEl = this.createMessageElement('assistant', '');
         this.currentMessageEl.classList.add('streaming');
         this.currentMessageEl.dataset.pendingAssistant = 'true';
         this.currentContent = '';
         
-        // Add loading indicator
         const loadingEl = document.createElement('div');
         loadingEl.className = 'loading-indicator';
         loadingEl.innerHTML = '<span></span><span></span><span></span>';
@@ -1183,12 +213,11 @@ class RXCafeChat {
             const decoder = new TextDecoder();
             let buffer = '';
             
-            // Remove loading indicator only if we haven't received content from SSE yet
             const contentEl = this.currentMessageEl.querySelector('.message-content');
-            const loadingEl = contentEl?.querySelector('.loading-indicator');
-            if (loadingEl) {
+            const loadingIndicator = contentEl?.querySelector('.loading-indicator');
+            if (loadingIndicator) {
                 console.log('[RXCAFE] Removing loading indicator');
-                loadingEl.remove();
+                loadingIndicator.remove();
             }
             
             while (true) {
@@ -1204,7 +233,7 @@ class RXCafeChat {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.slice(6));
-                            this.handleStreamData(data);
+                            this.streamingManager.handleStreamData(data);
                         } catch (e) {
                             console.error('Failed to parse SSE data:', e);
                         }
@@ -1219,12 +248,9 @@ class RXCafeChat {
             if (this.currentMessageEl) {
                 this.currentMessageEl.classList.remove('streaming');
                 
-                // If it's still pending (not claimed by SSE yet), keep it for a short window
-                // so a late-arriving SSE chunk can still claim it.
                 if (this.currentMessageEl.dataset.pendingAssistant) {
                     this._lastAssistantEl = this.currentMessageEl;
                     
-                    // Safety check: if no content arrived after 5s, remove the empty bubble
                     const el = this.currentMessageEl;
                     setTimeout(() => {
                         if (el.parentElement && el.dataset.pendingAssistant && !el.dataset.chunkId) {
@@ -1242,250 +268,8 @@ class RXCafeChat {
     }
     
     async toggleRecording() {
-        if (!this.sessionId) {
-            this.showWizardModal();
-            return;
-        }
-
-        if (this.isRecording) {
-            this.stopRecording();
-        } else {
-            await this.startRecording();
-        }
+        this.recordingManager.toggle();
     }
-
-    async startRecording() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: { 
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                } 
-            });
-
-            // Try to find a supported audio type - prioritize MP3, then fallback to webm
-            let mimeType = 'audio/webm'; // Default fallback
-            if (MediaRecorder.isTypeSupported('audio/mpeg')) {
-                mimeType = 'audio/mpeg';
-            } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
-                mimeType = 'audio/mp3';
-            }
-
-            this.mediaRecorder = new MediaRecorder(stream, { mimeType });
-            this.recordedChunks = [];
-            this.recordingStartTime = Date.now();
-
-            this.mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    this.recordedChunks.push(event.data);
-                }
-            };
-
-            this.mediaRecorder.onstop = () => {
-                this.processRecording();
-                stream.getTracks().forEach(track => track.stop());
-            };
-
-            this.mediaRecorder.start();
-            this.isRecording = true;
-            this.updateUIState();
-
-        } catch (error) {
-            console.error('[RXCAFE] Error starting recording:', error);
-            alert('Unable to access microphone. Please check your permissions.');
-        }
-    }
-
-    stopRecording() {
-        if (this.mediaRecorder && this.isRecording) {
-            this.mediaRecorder.stop();
-            this.isRecording = false;
-            this.updateUIState();
-        }
-    }
-
-    async processRecording() {
-        if (this.recordedChunks.length === 0) {
-            console.warn('[RXCAFE] No audio recorded');
-            return;
-        }
-
-        const audioBlob = new Blob(this.recordedChunks, { type: 'audio/webm' });
-        const duration = (Date.now() - this.recordingStartTime) / 1000;
-
-        console.log('[RXCAFE] Recording completed', {
-            size: audioBlob.size,
-            duration: duration.toFixed(2),
-            mimeType: audioBlob.type
-        });
-
-        // Convert to MP3 if needed
-        let mp3Blob;
-        if (audioBlob.type === 'audio/mpeg') {
-            mp3Blob = audioBlob;
-        } else {
-            console.log('[RXCAFE] Converting audio to MP3');
-            mp3Blob = await this.convertToMP3(audioBlob);
-        }
-
-        // Send audio to server
-        await this.sendAudioChunk(mp3Blob, duration);
-    }
-
-    async convertToMP3(audioBlob) {
-        return new Promise((resolve, reject) => {
-            // Create an AudioContext to decode the audio
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // Decode the audio blob
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const arrayBuffer = e.target.result;
-                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    
-                    // Convert to MP3 using lamejs
-                    const mp3Buffer = this.encodeToMP3(audioBuffer);
-                    const mp3Blob = new Blob([mp3Buffer], { type: 'audio/mpeg' });
-                    
-                    audioContext.close();
-                    resolve(mp3Blob);
-                } catch (error) {
-                    console.error('[RXCAFE] Error decoding audio:', error);
-                    audioContext.close();
-                    reject(new Error('Failed to decode audio'));
-                }
-            };
-            
-            reader.onerror = (error) => {
-                console.error('[RXCAFE] Error reading audio blob:', error);
-                reject(new Error('Failed to read audio'));
-            };
-            
-            reader.readAsArrayBuffer(audioBlob);
-        });
-    }
-
-    encodeToMP3(audioBuffer) {
-        const sampleRate = audioBuffer.sampleRate;
-        const numChannels = audioBuffer.numberOfChannels;
-        const samples = [];
-
-        // Interleave channels
-        if (numChannels === 1) {
-            // Mono - no interleaving needed
-            const channelData = audioBuffer.getChannelData(0);
-            const pcmData = this.floatTo16BitPCM(channelData);
-            samples.push(pcmData);
-        } else {
-            // Stereo - interleave channels
-            const leftChannel = audioBuffer.getChannelData(0);
-            const rightChannel = audioBuffer.getChannelData(1);
-            const interleaved = new Float32Array(leftChannel.length * 2);
-            
-            for (let i = 0; i < leftChannel.length; i++) {
-                interleaved[i * 2] = leftChannel[i];
-                interleaved[i * 2 + 1] = rightChannel[i];
-            }
-            
-            const pcmData = this.floatTo16BitPCM(interleaved);
-            samples.push(pcmData);
-        }
-
-        // Encode to MP3
-        const mp3Encoder = new lamejs.Mp3Encoder(numChannels, sampleRate, 128);
-        const mp3Data = [];
-
-        const chunkSize = 1152; // lamejs default
-        for (let i = 0; i < samples[0].length; i += chunkSize) {
-            const chunk = samples[0].subarray(i, i + chunkSize);
-            const mp3Chunk = mp3Encoder.encodeBuffer(chunk);
-            if (mp3Chunk.length > 0) {
-                mp3Data.push(mp3Chunk);
-            }
-        }
-
-        const finalChunk = mp3Encoder.flush();
-        if (finalChunk.length > 0) {
-            mp3Data.push(finalChunk);
-        }
-
-        return new Uint8Array(this.concatBuffers(mp3Data));
-    }
-
-    floatTo16BitPCM(input) {
-        const output = new Int16Array(input.length);
-        for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]));
-            output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        return output;
-    }
-
-    concatBuffers(buffers) {
-        let length = 0;
-        for (let i = 0; i < buffers.length; i++) {
-            length += buffers[i].length;
-        }
-        const result = new Uint8Array(length);
-        let offset = 0;
-        for (let i = 0; i < buffers.length; i++) {
-            result.set(buffers[i], offset);
-            offset += buffers[i].length;
-        }
-        return result;
-    }
-
-    async sendAudioChunk(audioBlob, duration) {
-        try {
-            // Show loading indicator
-            this.isGenerating = true;
-            this.updateUIState();
-
-            // Convert blob to ArrayBuffer
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            const audioData = new Uint8Array(arrayBuffer);
-
-            // Send audio chunk to server
-            const response = await fetch(this.apiUrl(`/api/chat/${this.sessionId}`), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': this.authHeader
-                },
-                body: JSON.stringify({
-                    audio: {
-                        data: Array.from(audioData),
-                        mimeType: audioBlob.type,
-                        duration: duration.toFixed(2)
-                    }
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log('[RXCAFE] Audio chunk sent successfully', result);
-            
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
-
-            // The session stream will handle the response from the agent
-            // We don't need to process anything here
-        } catch (error) {
-            console.error('[RXCAFE] Error sending audio:', error);
-            this.showError(`Failed to send audio: ${error.message}`);
-        } finally {
-            this.isGenerating = false;
-            this.updateUIState();
-        }
-    }
-
-
     
     async handleWebCommand(url) {
         if (!url) {
@@ -1493,7 +277,6 @@ class RXCafeChat {
             return;
         }
         
-        // Show fetching indicator
         const loadingEl = document.createElement('div');
         loadingEl.className = 'message system fetching';
         loadingEl.innerHTML = '<div class="message-content">Fetching web content...</div>';
@@ -1512,7 +295,6 @@ class RXCafeChat {
             loadingEl.remove();
             
             if (data.success && data.chunk) {
-                // SSE will render the chunk; we just show success
                 this.addSystemMessage(`Fetched: ${data.chunk.annotations?.['web.source-url'] || url}`);
             } else {
                 this.showError(data.error || 'Failed to fetch web content');
@@ -1547,7 +329,7 @@ class RXCafeChat {
             const data = await response.json();
             
             if (data.success) {
-                this.addSystemChunk(data.chunk, prompt);
+                this.messagesManager.addSystemChunk(data.chunk, prompt);
             } else {
                 this.showError(data.error || 'Failed to set system prompt');
             }
@@ -1596,76 +378,164 @@ class RXCafeChat {
         }
     }
     
-    addSystemChunk(chunk, prompt) {
-        this.addRawChunk(chunk);
-        
+    createMessageElement(role, content, annotations = {}) {
         const messageEl = document.createElement('div');
-        messageEl.className = 'message system-prompt';
-        messageEl.dataset.chunkId = chunk.id;
-        
-        const headerEl = document.createElement('div');
-        headerEl.className = 'system-header';
-        headerEl.innerHTML = '<span class="system-label">⚙️ System Prompt</span>';
+        this._elCounter++;
+        messageEl.dataset.elId = this._elCounter;
+        messageEl.className = `message ${role}`;
         
         const contentEl = document.createElement('div');
         contentEl.className = 'message-content';
-        contentEl.textContent = prompt;
         
-        messageEl.appendChild(headerEl);
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'message-body';
+        this.renderMessageBody(bodyEl, content, annotations);
+        
+        contentEl.appendChild(bodyEl);
         messageEl.appendChild(contentEl);
-        
+        return messageEl;
+    }
+
+    renderMessageBody(el, content, annotations) {
+        if (annotations['parsers.markdown.enabled'] && typeof marked !== 'undefined') {
+            el.innerHTML = marked.parse(content);
+        } else {
+            el.textContent = content;
+        }
+    }
+    
+    updateMessageContent(messageEl, content, annotations = {}) {
+        const bodyEl = messageEl.querySelector('.message-body');
+        if (bodyEl) {
+            this.renderMessageBody(bodyEl, content, annotations);
+            this.scrollToBottom();
+        }
+    }
+    
+    addMessage(role, content, chunkId = null, annotations = {}) {
+        return this.messagesManager.addMessage(role, content, chunkId, annotations);
+    }
+    
+    updateSentiment(messageEl, sentiment) {
+        this.messagesManager.updateSentiment(messageEl, sentiment);
+    }
+    
+    addSystemMessage(text) {
+        const messageEl = document.createElement('div');
+        messageEl.className = 'system-message';
+        messageEl.style.cssText = 'text-align: center; color: #6b7280; font-size: 0.875rem; margin: 1rem 0;';
+        messageEl.textContent = text;
         this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
         this.scrollToBottom();
     }
     
-    addWebChunk(chunk) {
-        this.addRawChunk(chunk);
-        
-        const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
-        const sourceUrl = chunk.annotations?.['web.source-url'] || 'Unknown source';
-        
-        const messageEl = document.createElement('div');
-        messageEl.className = `message web ${isTrusted ? 'trusted' : 'untrusted'}`;
-        messageEl.dataset.chunkId = chunk.id;
-        
-        const headerEl = document.createElement('div');
-        headerEl.className = 'web-header';
-        
-        const sourceEl = document.createElement('span');
-        sourceEl.className = 'web-source';
-        sourceEl.textContent = `Web: ${sourceUrl}`;
-        
-        const trustBadge = document.createElement('span');
-        trustBadge.className = `trust-badge ${isTrusted ? 'trusted' : 'untrusted'}`;
-        trustBadge.textContent = isTrusted ? 'Trusted' : 'Untrusted';
-        
-        const trustToggle = document.createElement('button');
-        trustToggle.className = 'trust-toggle';
-        trustToggle.textContent = isTrusted ? 'Untrust' : 'Trust';
-        trustToggle.onclick = () => this.toggleTrustFromButton(chunk.id, !isTrusted);
-        
-        headerEl.appendChild(sourceEl);
-        headerEl.appendChild(trustBadge);
-        headerEl.appendChild(trustToggle);
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        contentEl.textContent = chunk.content;
-        
-        messageEl.appendChild(headerEl);
-        messageEl.appendChild(contentEl);
-        
-        // Right-click context menu
-        messageEl.addEventListener('contextmenu', (e) => this.showContextMenu(e, chunk.id));
-        
-        this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
+    showError(message) {
+        const errorEl = document.createElement('div');
+        errorEl.className = 'error-message';
+        errorEl.textContent = message;
+        this.messagesEl.appendChild(errorEl);
         this.scrollToBottom();
-        
-        if (!isTrusted) {
-            this.addSystemMessage('Web content added but NOT trusted. Right-click and select "Trust Chunk" to include in LLM context, or click the Trust button.');
+    }
+    
+    showErrorInMessage(messageEl, error) {
+        const contentEl = messageEl.querySelector('.message-content');
+        if (contentEl) {
+            contentEl.innerHTML = `<span style="color: #dc2626;">Error: ${error}</span>`;
         }
+    }
+    
+    updateUIState() {
+        this.uiManager.updateUIState();
+    }
+    
+    connectStream(sessionId) {
+        this.streamingManager.connect(sessionId);
+    }
+    
+    disconnectStream() {
+        this.streamingManager.disconnect();
+    }
+    
+    renderChunk(chunk) {
+        this.messagesManager.renderChunk(chunk);
+    }
+    
+    addRawChunk(chunk) {
+        if (chunk.annotations?.['session.name']) {
+            const newName = chunk.annotations['session.name'];
+            const session = this.knownSessions.find(s => s.id === this.sessionId);
+            if (session) {
+                session.displayName = newName;
+                if (this.sessionsSidebar.style.display === 'flex') {
+                    this.renderSidebarSessionList();
+                }
+            }
+        }
+
+        const existingIndex = this.rawChunks.findIndex(c => c.id === chunk.id);
+        if (existingIndex !== -1) {
+            this.rawChunks[existingIndex] = chunk;
+        } else {
+            this.rawChunks.push(chunk);
+        }
+        console.log(`[RXCAFE] addRawChunk id=${chunk.id} total=${this.rawChunks.length}`);
+        if (this.inspectorVisible) {
+            this.updateInspector();
+        }
+    }
+    
+    updateInspector() {
+        this.uiManager.updateInspector();
+    }
+    
+    scrollToBottom() {
+        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    }
+    
+    async toggleTrust(trusted) {
+        if (!this.contextMenuChunkId || !this.sessionId) return;
+        
+        try {
+            const response = await fetch(this.apiUrl(`/api/session/${this.sessionId}/chunk/${this.contextMenuChunkId}/trust`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trusted })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
+                if (chunkEl) {
+                    chunkEl.classList.remove('trusted', 'untrusted');
+                    chunkEl.classList.add(trusted ? 'trusted' : 'untrusted');
+                    
+                    const badge = chunkEl.querySelector('.trust-badge');
+                    if (badge) {
+                        badge.textContent = trusted ? 'Trusted' : 'Untrusted';
+                        badge.className = `trust-badge ${trusted ? 'trusted' : 'untrusted'}`;
+                    }
+                }
+                
+                const rawChunk = this.rawChunks.find(c => c.id === this.contextMenuChunkId);
+                if (rawChunk) {
+                    rawChunk.annotations = rawChunk.annotations || {};
+                    rawChunk.annotations['security.trust-level'] = {
+                        trusted: trusted,
+                        source: rawChunk.annotations['security.trust-level']?.source || 'manual',
+                        requiresReview: !trusted
+                    };
+                    if (this.inspectorVisible) {
+                        this.updateInspector();
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Failed to toggle trust:', error);
+            this.showError('Failed to update trust status');
+        }
+        
+        this.uiManager.hideContextMenu();
     }
     
     async toggleTrustFromButton(chunkId, trusted) {
@@ -1718,33 +588,21 @@ class RXCafeChat {
         }
     }
     
-    handleStreamData(data) {
-        switch (data.type) {
-            case 'user':
-                if (data.chunk) {
-                    this.addRawChunk(data.chunk);
-                }
-                break;
-            case 'chunk':
-                if (data.chunk) {
-                    this.addRawChunk(data.chunk);
-                }
-                break;
-            case 'token':
-                if (data.token) {
-                    this.currentContent += data.token;
-                    const annotations = this.currentMessageEl?.dataset.annotations ? JSON.parse(this.currentMessageEl.dataset.annotations) : {};
-                    this.updateMessageContent(this.currentMessageEl, this.currentContent, annotations);
-                }
-                break;
-            case 'error':
-                this.showErrorInMessage(this.currentMessageEl, data.error);
-                break;
-            case 'finish':
-                break;
-            case 'done':
-                break;
+    copyChunkContent() {
+        if (!this.contextMenuChunkId) return;
+        
+        const chunkEl = this.chunkElements.get(this.contextMenuChunkId);
+        if (chunkEl) {
+            const content = chunkEl.querySelector('.message-content')?.textContent || '';
+            navigator.clipboard.writeText(content).then(() => {
+                this.uiManager.hideContextMenu();
+            });
         }
+    }
+    
+    showContextMenu(e, chunkId) {
+        this.contextMenuChunkId = chunkId;
+        this.uiManager.showContextMenu(e, chunkId);
     }
     
     async abortGeneration() {
@@ -1758,604 +616,124 @@ class RXCafeChat {
             console.error('Failed to abort:', error);
         }
     }
-
-    copySessionId() {
-        if (!this.sessionId) return;
-        navigator.clipboard.writeText(this.sessionId).then(() => {
-            const originalText = this.copySessionIdBtn.textContent;
-            this.copySessionIdBtn.textContent = '✅';
-            setTimeout(() => {
-                this.copySessionIdBtn.textContent = originalText;
-            }, 2000);
-        });
+    
+    updateHeaderInfo() {
+        this.uiManager.updateHeaderInfo();
     }
     
-    addMessage(role, content, chunkId = null, annotations = {}) {
-        const messageEl = this.createMessageElement(role, content, annotations);
-        console.log(`[RXCAFE] addMessage elId=${messageEl.dataset.elId} role=${role} chunkId=${chunkId}`);
-        if (chunkId) {
-            messageEl.dataset.chunkId = chunkId;
-            this.chunkElements.set(chunkId, messageEl);
-        }
-        this.messagesEl.appendChild(messageEl);
-        this.scrollToBottom();
-        return messageEl;
-    }
-
-    updateSentiment(messageEl, sentiment) {
-        if (!messageEl || !sentiment) return;
-        console.log('[RXCAFE] updateSentiment called for element:', messageEl.dataset.elId, sentiment);
-        
-        let metaEl = messageEl.querySelector('.sentiment-meta');
-        if (!metaEl) {
-            metaEl = document.createElement('div');
-            metaEl.className = 'message-meta sentiment-meta';
-            metaEl.style.fontSize = '0.7rem';
-            metaEl.style.marginTop = '0.4rem';
-            metaEl.style.padding = '0.4rem';
-            metaEl.style.backgroundColor = 'rgba(0,0,0,0.05)';
-            metaEl.style.borderRadius = '0.25rem';
-            messageEl.querySelector('.message-content').appendChild(metaEl);
-        }
-        
-        const score = parseFloat(sentiment.score) || 0;
-        const emoji = score > 0.3 ? '😊' : (score < -0.3 ? '☹️' : '😐');
-        metaEl.textContent = `Sentiment: ${emoji} (${score.toFixed(2)}) - ${sentiment.explanation}`;
-    }
-
-    addImageMessage(role, chunk) {
-        if (!chunk.content || !chunk.content.data) {
-            console.error('[RXCAFE] Binary chunk missing data', chunk);
-            return;
-        }
-        const { data, mimeType } = chunk.content;
-        
-        // Convert numeric array/object to Uint8Array
-        let uint8;
-        if (data instanceof Uint8Array) {
-            uint8 = data;
-        } else if (Array.isArray(data)) {
-            uint8 = new Uint8Array(data);
-        } else if (typeof data === 'object' && data !== null) {
-            // Check if it is a Buffer-like object with .data array
-            if (data.type === 'Buffer' && Array.isArray(data.data)) {
-                uint8 = new Uint8Array(data.data);
-            } else {
-                uint8 = new Uint8Array(Object.values(data));
-            }
-        } else {
-            console.error('[RXCAFE] Invalid image data format', data);
-            return;
-        }
-
-        const blob = new Blob([uint8], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        
-        const messageEl = document.createElement('div');
-        this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = `message ${role} image-message`;
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = chunk.annotations?.['image.description'] || 'Generated image';
-        img.style.maxWidth = '100%';
-        img.style.borderRadius = '0.5rem';
-        img.style.display = 'block';
-        
-        // Revoke object URL when image is loaded to save memory
-        img.onload = () => URL.revokeObjectURL(url);
-        
-        contentEl.appendChild(img);
-        
-        if (chunk.annotations?.['image.description']) {
-            const caption = document.createElement('div');
-            caption.className = 'message-meta';
-            caption.textContent = chunk.annotations['image.description'];
-            contentEl.appendChild(caption);
-        }
-        
-        messageEl.appendChild(contentEl);
-        this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
-        this.scrollToBottom();
-    }
-
-    addAudioMessage(role, chunk) {
-        if (!chunk.content || !chunk.content.data) {
-            console.error('[RXCAFE] Binary chunk missing data', chunk);
-            return;
-        }
-        const { data, mimeType } = chunk.content;
-        
-        let uint8;
-        if (data instanceof Uint8Array) {
-            uint8 = data;
-        } else if (Array.isArray(data)) {
-            uint8 = new Uint8Array(data);
-        } else if (typeof data === 'object' && data !== null) {
-            if (data.type === 'Buffer' && Array.isArray(data.data)) {
-                uint8 = new Uint8Array(data.data);
-            } else {
-                uint8 = new Uint8Array(Object.values(data));
-            }
-        } else {
-            console.error('[RXCAFE] Invalid audio data format', data);
-            return;
-        }
-
-        const blob = new Blob([uint8], { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        console.log(`[RXCAFE] Created audio blob URL: ${url} (size: ${blob.size} bytes, type: ${mimeType})`);
-        
-        const messageEl = document.createElement('div');
-        this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.dataset.chunkId = chunk.id;
-        messageEl.className = `message ${role} audio-message`;
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const audio = document.createElement('audio');
-        audio.src = url;
-        audio.controls = true;
-        audio.style.width = '100%';
-        audio.style.display = 'block';
-        
-        // Debug audio element
-        audio.onload = () => console.log('[RXCAFE] Audio loaded');
-        audio.onerror = (e) => console.error('[RXCAFE] Audio error:', e);
-        audio.onloadedmetadata = (e) => console.log('[RXCAFE] Audio metadata:', e.target.duration, 'seconds');
-        
-        contentEl.appendChild(audio);
-        
-        if (chunk.annotations?.['audio.description']) {
-            const caption = document.createElement('div');
-            caption.className = 'message-meta';
-            caption.textContent = chunk.annotations['audio.description'];
-            contentEl.appendChild(caption);
-        }
-        
-        messageEl.appendChild(contentEl);
-        this.messagesEl.appendChild(messageEl);
-        this.chunkElements.set(chunk.id, messageEl);
-        this.scrollToBottom();
+    renderSidebarSessionList() {
+        this.uiManager.renderSidebarSessionList();
     }
     
-    createMessageElement(role, content, annotations = {}) {
-        const messageEl = document.createElement('div');
-        this._elCounter++;
-        messageEl.dataset.elId = this._elCounter;
-        messageEl.className = `message ${role}`;
-        
-        const contentEl = document.createElement('div');
-        contentEl.className = 'message-content';
-        
-        const bodyEl = document.createElement('div');
-        bodyEl.className = 'message-body';
-        this.renderMessageBody(bodyEl, content, annotations);
-        
-        contentEl.appendChild(bodyEl);
-        messageEl.appendChild(contentEl);
-        return messageEl;
-    }
-
-    renderMessageBody(el, content, annotations) {
-        if (annotations['parsers.markdown.enabled'] && typeof marked !== 'undefined') {
-            el.innerHTML = marked.parse(content);
-        } else {
-            el.textContent = content;
-        }
+    renderSessionList() {
+        this.uiManager.renderSessionList();
     }
     
-    updateMessageContent(messageEl, content, annotations = {}) {
-        const bodyEl = messageEl.querySelector('.message-body');
-        if (bodyEl) {
-            this.renderMessageBody(bodyEl, content, annotations);
-            this.scrollToBottom();
-        }
+    showSessionsModal() {
+        this.uiManager.showSessionsModal();
     }
     
-    showErrorInMessage(messageEl, error) {
-        const contentEl = messageEl.querySelector('.message-content');
-        if (contentEl) {
-            contentEl.innerHTML = `<span style="color: #dc2626;">Error: ${error}</span>`;
-        }
-    }
-    
-    addSystemMessage(text) {
-        const messageEl = document.createElement('div');
-        messageEl.className = 'system-message';
-        messageEl.style.cssText = 'text-align: center; color: #6b7280; font-size: 0.875rem; margin: 1rem 0;';
-        messageEl.textContent = text;
-        this.messagesEl.appendChild(messageEl);
-        this.scrollToBottom();
-    }
-    
-    showError(message) {
-        const errorEl = document.createElement('div');
-        errorEl.className = 'error-message';
-        errorEl.textContent = message;
-        this.messagesEl.appendChild(errorEl);
-        this.scrollToBottom();
-    }
-    
-    updateUIState() {
-        this.sendBtn.style.display = this.isGenerating ? 'none' : 'block';
-        this.sendBtn.disabled = !this.sessionId;
-        this.abortBtn.style.display = this.isGenerating ? 'block' : 'none';
-        this.messageInput.disabled = this.isGenerating || !this.sessionId || this.isRecording;
-        this.copySessionIdBtn.style.display = this.sessionId ? 'inline-block' : 'none';
-        this.microphoneBtn.disabled = !this.sessionId || this.isGenerating;
-        
-        // Update microphone button state
-        if (this.isRecording) {
-            this.microphoneBtn.textContent = '⏹️';
-            this.microphoneBtn.className = 'btn btn-danger';
-            this.microphoneBtn.title = 'Stop recording';
-        } else {
-            this.microphoneBtn.textContent = '🎤';
-            this.microphoneBtn.className = 'btn btn-secondary';
-            this.microphoneBtn.title = 'Record audio';
-        }
-    }
-    
-    toggleInspector() {
-        const isVisible = this.inspectorPanel.classList.contains('visible');
-        if (isVisible) {
-            this.hideInspector();
-        } else {
-            this.showInspector();
-        }
-    }
-
-    showInspector() {
-        this.inspectorVisible = true;
-        this.inspectorPanel.style.display = 'flex';
-        setTimeout(() => {
-            this.inspectorPanel.classList.add('visible');
-        }, 10);
-        if (window.innerWidth <= 800 && this.inspectorOverlay) {
-            this.inspectorOverlay.style.display = 'block';
-        }
-        this.updateInspector();
-    }
-
-    hideInspector() {
-        this.inspectorVisible = false;
-        this.inspectorPanel.classList.remove('visible');
-        if (window.innerWidth <= 800) {
-            if (this.inspectorOverlay) {
-                this.inspectorOverlay.style.display = 'none';
-            }
-            setTimeout(() => {
-                if (!this.inspectorPanel.classList.contains('visible')) {
-                    this.inspectorPanel.style.display = 'none';
-                }
-            }, 300);
-        }
-    }
-
-    async showSessionsModal() {
-        this.sessionsModal.style.display = 'flex';
-        await this.loadSessions();
-        this.renderSessionList();
-    }
-
     hideSessionsModal() {
-        this.sessionsModal.style.display = 'none';
+        this.uiManager.hideSessionsModal();
     }
-
+    
     toggleSessionsSidebar() {
-        const isVisible = this.sessionsSidebar.classList.contains('visible');
-        if (isVisible) {
-            this.hideSessionsSidebar();
-        } else {
-            this.showSessionsSidebar();
-        }
+        this.uiManager.toggleSessionsSidebar();
     }
-
+    
     showSessionsSidebar() {
-        this.sessionsSidebar.style.display = 'flex';
-        // Use a small timeout to ensure display: flex is applied before adding visible class for transition
-        setTimeout(() => {
-            this.sessionsSidebar.classList.add('visible');
-        }, 10);
-
-        if (window.innerWidth <= 800 && this.sessionsSidebarOverlay) {
-            this.sessionsSidebarOverlay.style.display = 'block';
-        }
-        this.renderSidebarSessionList();
+        this.uiManager.showSessionsSidebar();
     }
-
+    
     hideSessionsSidebar() {
-        this.sessionsSidebar.classList.remove('visible');
-        
-        if (window.innerWidth <= 800) {
-            if (this.sessionsSidebarOverlay) {
-                this.sessionsSidebarOverlay.style.display = 'none';
-            }
-            // On mobile, hide display after transition
-            setTimeout(() => {
-                if (!this.sessionsSidebar.classList.contains('visible')) {
-                    this.sessionsSidebar.style.display = 'none';
-                }
-            }, 300);
-        }
-        // On desktop we keep it display: flex but transform handles it
+        this.uiManager.hideSessionsSidebar();
     }
-
+    
     showSidebarMenu(e, sessionId) {
-        e.stopPropagation();
-        this.sidebarMenuSessionId = sessionId;
-        this.sidebarMenu.style.display = 'block';
-        
-        const rect = e.target.getBoundingClientRect();
-        const menuWidth = 140; // Default min-width + padding
-        
-        // Position horizontally: align right edge of menu with right edge of button
-        // if it would overflow the screen, otherwise just use rect.left
-        let left = rect.right - menuWidth;
-        if (left < 10) left = 10; // Keep some margin from left
-        
-        this.sidebarMenu.style.left = `${left}px`;
-        this.sidebarMenu.style.top = `${rect.bottom + window.scrollY}px`;
+        this.uiManager.showSidebarMenu(e, sessionId);
     }
-
+    
     hideSidebarMenu() {
-        this.sidebarMenu.style.display = 'none';
-        this.sidebarMenuSessionId = null;
+        this.uiManager.hideSidebarMenu();
     }
-
+    
+    async switchToSessionFromSidebar(sessionId) {
+        if (sessionId === this.sessionId) return;
+        await this.sessionsManager.switchToSession(sessionId);
+        if (window.innerWidth <= 800) {
+            this.hideSessionsSidebar();
+        }
+    }
+    
+    async switchToSessionFromModal(sessionId) {
+        await this.sessionsManager.switchToSession(sessionId);
+        this.hideSessionsModal();
+    }
+    
     async renameSessionFromMenu() {
         const sessionId = this.sidebarMenuSessionId;
         this.hideSidebarMenu();
         if (sessionId) {
-            await this.renameSession(sessionId);
+            await this.sessionsManager.renameSession(sessionId);
         }
     }
-
+    
     async deleteSessionFromMenu() {
         const sessionId = this.sidebarMenuSessionId;
         this.hideSidebarMenu();
         if (sessionId) {
-            await this.deleteSession(sessionId);
+            await this.sessionsManager.deleteSession(sessionId);
         }
     }
-
-    renderSidebarSessionList() {
-        if (this.knownSessions.length === 0) {
-            this.sidebarSessionList.innerHTML = '<p>No sessions found.</p>';
-            return;
-        }
-
-        this.sidebarSessionList.innerHTML = this.knownSessions.map(s => {
-            const isCurrent = s.id === this.sessionId;
-            const displayName = s.displayName || s.agentName;
-            const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
-            
-            return `
-                <div class="sidebar-session-item ${isCurrent ? 'active' : ''}" onclick="chat.switchToSessionFromSidebar('${s.id}')">
-                    <div class="sidebar-session-info">
-                        <div class="sidebar-session-name">${displayName}${s.isBackground ? ' [bg]' : ''}</div>
-                        <div class="sidebar-session-meta">${s.agentName} • ${shortId}</div>
-                    </div>
-                    <button class="sidebar-session-more-btn" onclick="chat.showSidebarMenu(event, '${s.id}')">⋮</button>
-                </div>
-            `;
-        }).join('');
-    }
-
-    async switchToSessionFromSidebar(sessionId) {
-        if (sessionId === this.sessionId) return;
-        await this.switchToSession(sessionId);
-        if (window.innerWidth <= 800) {
-            this.hideSessionsSidebar();
-        }
-    }
-
-    renderSessionList() {
-        if (this.knownSessions.length === 0) {
-            this.sessionList.innerHTML = '<p>No sessions found.</p>';
-            return;
-        }
-
-        this.sessionList.innerHTML = this.knownSessions.map(s => {
-            const isCurrent = s.id === this.sessionId;
-            const displayName = s.displayName || s.agentName;
-            const bg = s.isBackground ? ' [background]' : '';
-            const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
-            
-            return `
-                <div class="session-item ${isCurrent ? 'active' : ''}">
-                    <div class="session-item-info">
-                        <div class="session-item-name">${displayName}${bg}</div>
-                        <div class="session-item-details">${shortId} • ${s.agentName}</div>
-                    </div>
-                    <div class="session-item-actions">
-                        ${!isCurrent ? `<button class="btn btn-primary btn-small" onclick="chat.switchToSessionFromModal('${s.id}')">Switch</button>` : ''}
-                        <button class="btn btn-secondary btn-small" onclick="chat.renameSession('${s.id}')">Rename</button>
-                        <button class="btn btn-danger btn-small" onclick="chat.deleteSession('${s.id}')">Delete</button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    async switchToSessionFromModal(sessionId) {
-        await this.switchToSession(sessionId);
-        this.hideSessionsModal();
-    }
-
+    
     async renameSession(sessionId) {
-        const session = this.knownSessions.find(s => s.id === sessionId);
-        const currentName = session ? (session.displayName || session.agentName) : '';
-        const newName = prompt('Enter new session name:', currentName);
-        
-        if (newName === null || newName === currentName) return;
-
-        try {
-            const response = await fetch(this.apiUrl(`/api/session/${sessionId}/chunk`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contentType: 'null',
-                    producer: 'com.rxcafe.user-ui',
-                    annotations: {
-                        'session.name': newName
-                    },
-                    emit: true
-                })
-            });
-            const data = await response.json();
-
-            if (data.success) {
-                // The update will come back via SSE or be handled by addRawChunk if it's the current session
-                if (session) {
-                    session.displayName = newName;
-                    
-                    // Update Sidebar if visible
-                    if (this.sessionsSidebar.style.display === 'flex') {
-                        this.renderSidebarSessionList();
-                    }
-
-                    this.renderSessionList();
-                }
-            } else {
-                this.showError(data.message || 'Failed to rename session');
-            }
-        } catch (error) {
-            console.error('Failed to rename session:', error);
-            this.showError('Error renaming session');
-        }
+        await this.sessionsManager.renameSession(sessionId);
     }
-
+    
     async deleteSession(sessionId) {
-        if (!confirm('Are you sure you want to delete this session? History will be lost.')) return;
-        console.log(`[RXCAFE] Deleting session: ${sessionId}`);
-
-        try {
-            const response = await fetch(this.apiUrl(`/api/session/${sessionId}`), {
-                method: 'DELETE'
-            });
-            const data = await response.json();
-            console.log(`[RXCAFE] Delete response:`, data);
-
-            if (data.success) {
-                if (this.sessionId === sessionId) {
-                    console.log('[RXCAFE] Deleted current session, clearing UI');
-                    this.sessionId = null;
-                    if (window.location.hash.substring(1) === sessionId) {
-                        history.replaceState(null, null, ' '); // Clear hash without adding to history
-                    }
-                    this.messagesEl.innerHTML = '<div class="welcome-message"><h2>Session Deleted</h2><p>Please create or select another session.</p></div>';
-                    this.backendInfoEl.textContent = 'No session';
-                    this.messageInput.disabled = true;
-                    this.sendBtn.disabled = true;
-                    this.disconnectStream();
-                }
-                await this.loadSessions();
-                
-                // Update Sidebar if visible
-                if (this.sessionsSidebar.style.display === 'flex') {
-                    this.renderSidebarSessionList();
-                }
-
-                console.log('[RXCAFE] Session list updated after delete');
-            } else {
-                this.showError(data.message || 'Failed to delete session');
-            }
-        } catch (error) {
-            console.error('Failed to delete session:', error);
-            this.showError('Error deleting session');
-        }
+        await this.sessionsManager.deleteSession(sessionId);
     }
     
-    addRawChunk(chunk) {
-        // Check for session naming annotation
-        if (chunk.annotations?.['session.name']) {
-            const newName = chunk.annotations['session.name'];
-            const session = this.knownSessions.find(s => s.id === this.sessionId);
-            if (session) {
-                session.displayName = newName;
-                
-                // Update Sidebar if visible
-                if (this.sessionsSidebar.style.display === 'flex') {
-                    this.renderSidebarSessionList();
-                }
-            }
-        }
-
-        const existingIndex = this.rawChunks.findIndex(c => c.id === chunk.id);
-        if (existingIndex !== -1) {
-            this.rawChunks[existingIndex] = chunk;
-        } else {
-            this.rawChunks.push(chunk);
-        }
-        console.log(`[RXCAFE] addRawChunk id=${chunk.id} total=${this.rawChunks.length}`);
-        if (this.inspectorVisible) {
-            this.updateInspector();
-        }
+    async loadSessions() {
+        await this.sessionsManager.loadSessions();
     }
     
-    updateInspector() {
-        this.inspectorSession.textContent = JSON.stringify({
-            sessionId: this.sessionId,
-            agentName: this.agentName,
-            backend: this.backend,
-            model: this.model,
-            isBackground: this.isBackground
-        }, null, 2);
-        
-        this.inspectorChunkCount.textContent = this.rawChunks.length;
-        
-        this.inspectorChunks.innerHTML = this.rawChunks.map(chunk => {
-            const role = this.getChunkRole(chunk);
-            const trustStatus = chunk.annotations?.['security.trust-level']?.trusted;
-            const roleClass = trustStatus !== undefined 
-                ? (trustStatus ? 'trusted' : 'untrusted')
-                : role;
-            
-            return `
-                <div class="inspector-chunk" data-chunk-id="${chunk.id}">
-                    <div class="inspector-chunk-header" onclick="this.parentElement.classList.toggle('expanded')">
-                        <span class="inspector-chunk-id">${chunk.id.split('-').slice(-2).join('-')}</span>
-                        <span class="inspector-chunk-role ${roleClass}">${role}</span>
-                    </div>
-                    <div class="inspector-chunk-body">
-                        <pre>${this.escapeHtml(JSON.stringify(chunk, null, 2))}</pre>
-                    </div>
-                </div>
-            `;
-        }).join('');
+    async loadAgents() {
+        await this.sessionsManager.loadAgents();
     }
     
-    getChunkRole(chunk) {
-        const role = chunk.annotations?.['chat.role'];
-        if (role === 'system') return 'system';
-        if (role) return role;
-        if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url']) return 'web';
-        if (chunk.producer.includes('kobold') || chunk.producer.includes('ollama') || chunk.producer === 'com.rxcafe.assistant') return 'assistant';
-        return chunk.producer.split('.').pop();
+    async switchToSession(sessionId) {
+        await this.sessionsManager.switchToSession(sessionId);
     }
     
-    escapeHtml(str) {
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    async createSessionFromWizard(agentId, config) {
+        await this.sessionsManager.createSession(agentId, config);
     }
     
-    scrollToBottom() {
-        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    async handleWizardComplete(e) {
+        this.uiManager.handleWizardComplete(e);
+    }
+    
+    copySessionId() {
+        this.uiManager.copySessionId();
+    }
+    
+    toggleInspector() {
+        this.uiManager.toggleInspector();
+    }
+    
+    showInspector() {
+        this.uiManager.showInspector();
+    }
+    
+    hideInspector() {
+        this.uiManager.hideInspector();
     }
 }
 
 let chat;
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     chat = new RXCafeChat();
+    window.chat = chat;
 });
