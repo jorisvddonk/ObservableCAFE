@@ -58,7 +58,7 @@ import {
   restoreTelegramSubscriptions, 
   getTelegramBot
 } from './lib/telegram-handler.js';
-import * as api from './lib/api-handlers.js';
+import * as api from './lib/api/index.js';
 
 handleCliCommands(process.argv.slice(2));
 
