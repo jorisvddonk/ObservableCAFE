@@ -20,9 +20,6 @@
  */
 
 import { serve } from 'bun';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import {
   createTextChunk,
   createNullChunk,
@@ -55,284 +52,33 @@ import {
   type AddChunkOptions,
   type CreateSessionOptions
 } from './core.js';
-import { TelegramBot, TelegramUser, TelegramConfig, TelegramVoice, TelegramAudio } from './lib/telegram.js';
 import { Database, extractClientToken, maskToken } from './lib/database.js';
 import { SessionStore } from './lib/session-store.js';
 import type { LLMParams, RuntimeSessionConfig } from './lib/agent.js';
 import { validateConfigAgainstSchema } from './lib/agent.js';
 import { Subscription } from './lib/stream.js';
+import { handleCliCommands } from './lib/cli-handler.js';
+import { 
+  frontendHandler,
+  getFrontendHtml,
+  getFrontendJs,
+  getFrontendCss,
+  getManifest,
+  getServiceWorker,
+  getIcon,
+  getIconSvg,
+  getWidgetFile,
+  getWidgetCss,
+  getJsFile
+} from './lib/frontend-server.js';
+import { 
+  initTelegramHandler, 
+  restoreTelegramSubscriptions, 
+  getTelegramBot,
+  getTelegramState
+} from './lib/telegram-handler.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// =============================================================================
-// CLI Argument Parsing
-// =============================================================================
-
-const args = process.argv.slice(2);
-
-// Handle --help command
-if (args.includes('--help') || args.includes('-h')) {
-  console.log(`
-RXCAFE Chat Server
-
-Usage:
-  bun start                                          Start server
-  bun start -- --help                                Show this help message
-
-Client Management:
-  bun start -- --generate-token [desc]              Generate new API token
-  bun start -- --generate-token [desc] --admin      Generate admin API token
-  bun start -- --trust <token> [desc]               Trust an API token
-  bun start -- --list-clients                        List trusted API clients
-  bun start -- --revoke <id>                         Revoke a trusted client
-  bun start -- --token-admin <id>                    Toggle admin status for client
-
-Telegram Users:
-  bun start -- --trust-telegram <id|username> [desc]  Trust Telegram user
-  bun start -- --untrust-telegram <id|username>       Untrust Telegram user
-  bun start -- --list-telegram-users                   List trusted Telegram users
-
-Environment Variables:
-  PORT                       Server port (default: 3000)
-  TELEGRAM_TOKEN             Telegram bot token
-  TELEGRAM_WEBHOOK_URL       Telegram webhook URL
-  TRUST_DB_PATH              Path to trust database
-  KOBOLD_URL                 KoboldCPP base URL
-  OLLAMA_URL                 Ollama base URL
-  OLLAMA_MODEL               Ollama model name
-  BACKEND                    Default backend (kobold or ollama)
-`);
-  process.exit(0);
-}
-
-// Handle --trust command (add new client)
-const trustIndex = args.indexOf('--trust');
-if (trustIndex !== -1 && args[trustIndex + 1]) {
-  const token = args[trustIndex + 1];
-  const db = new Database();
-  
-  if (db.isTokenTrusted(token)) {
-    console.log('❌ This token is already trusted');
-    db.close();
-    process.exit(1);
-  }
-  
-  const description = args[trustIndex + 2] && !args[trustIndex + 2].startsWith('--') 
-    ? args[trustIndex + 2] 
-    : undefined;
-  
-  db.addClient(description);
-  console.log('✅ Client trusted successfully');
-  console.log(`Token: ${maskToken(token)}`);
-  if (description) {
-    console.log(`Description: ${description}`);
-  }
-  db.close();
-  process.exit(0);
-}
-
-// Handle --generate-token command
-if (args.includes('--generate-token')) {
-  const db = new Database();
-  const isAdmin = args.includes('--admin');
-  const description = args[args.indexOf('--generate-token') + 1] && !args[args.indexOf('--generate-token') + 1].startsWith('--')
-    ? args[args.indexOf('--generate-token') + 1]
-    : undefined;
-  
-  const token = db.addClientWithAdmin(description, isAdmin);
-  console.log('✅ New client token generated and trusted');
-  console.log(`Token: ${token}`);
-  console.log('');
-  console.log('Share this token with the client. They should use it as:');
-  console.log('  - Authorization: Bearer <token> header');
-  console.log('  - Or ?token=<token> query parameter');
-  if (description) {
-    console.log(`Description: ${description}`);
-  }
-  if (isAdmin) {
-    console.log('Admin: YES - This token has administrative privileges');
-  }
-  db.close();
-  process.exit(0);
-}
-
-// Handle --list-clients command
-if (args.includes('--list-clients')) {
-  const db = new Database();
-  const clients = db.listClients();
-  
-  if (clients.length === 0) {
-    console.log('No trusted clients found.');
-  } else {
-    console.log(`Trusted clients (${clients.length}):`);
-    console.log('');
-    console.log('ID  | Admin | Description          | Created            | Last Used          | Uses');
-    console.log('----|-------|----------------------|--------------------|--------------------|------');
-    
-    for (const client of clients) {
-      const admin = client.isAdmin ? '  ✓  ' : '     ';
-      const desc = (client.description || '').slice(0, 20).padEnd(20);
-      const created = new Date(client.createdAt).toLocaleString().slice(0, 18).padEnd(18);
-      const lastUsed = client.lastUsedAt 
-        ? new Date(client.lastUsedAt).toLocaleString().slice(0, 18).padEnd(18)
-        : 'Never'.padEnd(18);
-      const uses = client.useCount.toString().padStart(5);
-      
-      console.log(`${client.id.toString().padStart(3)} | ${admin} | ${desc} | ${created} | ${lastUsed} | ${uses}`);
-    }
-  }
-  
-  db.close();
-  process.exit(0);
-}
-
-// Handle --token-admin command
-const tokenAdminIndex = args.indexOf('--token-admin');
-if (tokenAdminIndex !== -1 && args[tokenAdminIndex + 1]) {
-  const id = parseInt(args[tokenAdminIndex + 1]);
-  if (isNaN(id)) {
-    console.log('❌ Invalid client ID');
-    process.exit(1);
-  }
-  
-  const db = new Database();
-  const client = db.getClientById(id);
-  
-  if (!client) {
-    console.log(`❌ Client ${id} not found`);
-    db.close();
-    process.exit(1);
-  }
-  
-  const newAdminStatus = !client.isAdmin;
-  const success = db.setAdminStatus(id, newAdminStatus);
-  
-  if (success) {
-    console.log(`✅ Client ${id} admin status: ${newAdminStatus ? 'ENABLED' : 'DISABLED'}`);
-    if (client.description) {
-      console.log(`Description: ${client.description}`);
-    }
-  } else {
-    console.log(`❌ Failed to update client ${id}`);
-  }
-  
-  db.close();
-  process.exit(success ? 0 : 1);
-}
-
-// Handle --revoke command
-const revokeIndex = args.indexOf('--revoke');
-if (revokeIndex !== -1 && args[revokeIndex + 1]) {
-  const id = parseInt(args[revokeIndex + 1]);
-  if (isNaN(id)) {
-    console.log('❌ Invalid client ID');
-    process.exit(1);
-  }
-  
-  const db = new Database();
-  const success = db.removeClient(id);
-  
-  if (success) {
-    console.log(`✅ Client ${id} revoked successfully`);
-  } else {
-    console.log(`❌ Client ${id} not found`);
-  }
-  
-  db.close();
-  process.exit(success ? 0 : 1);
-}
-
-// Handle --trust-telegram command
-const trustTelegramIndex = args.indexOf('--trust-telegram');
-if (trustTelegramIndex !== -1 && args[trustTelegramIndex + 1]) {
-  const identifier = args[trustTelegramIndex + 1];
-  const description = args[trustTelegramIndex + 2] && !args[trustTelegramIndex + 2].startsWith('--') 
-    ? args[trustTelegramIndex + 2] 
-    : undefined;
-  
-  const db = new Database();
-  
-  // Check if it's a user ID (numeric) or username
-  const userId = parseInt(identifier);
-  if (!isNaN(userId)) {
-    db.trustTelegramUser(userId, undefined, undefined, description);
-    console.log(`✅ Trusted Telegram user ID: ${userId}`);
-  } else {
-    // Treat as username
-    db.trustTelegramUsername(identifier, description);
-    console.log(`✅ Trusted Telegram username: ${identifier}`);
-  }
-  
-  if (description) {
-    console.log(`Description: ${description}`);
-  }
-  
-  db.close();
-  process.exit(0);
-}
-
-// Handle --untrust-telegram command
-const untrustTelegramIndex = args.indexOf('--untrust-telegram');
-if (untrustTelegramIndex !== -1 && args[untrustTelegramIndex + 1]) {
-  const identifier = args[untrustTelegramIndex + 1];
-  
-  const db = new Database();
-  
-  // Check if it's a user ID (numeric) or username
-  const userId = parseInt(identifier);
-  let success: boolean;
-  
-  if (!isNaN(userId)) {
-    success = db.untrustTelegramUser(userId);
-    if (success) {
-      console.log(`✅ Untrusted Telegram user ID: ${userId}`);
-    } else {
-      console.log(`❌ Telegram user ID ${userId} not found`);
-    }
-  } else {
-    success = db.untrustTelegramUsername(identifier);
-    if (success) {
-      console.log(`✅ Untrusted Telegram username: ${identifier}`);
-    } else {
-      console.log(`❌ Telegram username ${identifier} not found`);
-    }
-  }
-  
-  db.close();
-  process.exit(success ? 0 : 1);
-}
-
-// Handle --list-telegram-users command
-if (args.includes('--list-telegram-users')) {
-  const db = new Database();
-  const users = db.listTrustedTelegramUsers();
-  
-  if (users.length === 0) {
-    console.log('No trusted Telegram users found.');
-  } else {
-    console.log(`Trusted Telegram users (${users.length}):`);
-    console.log('');
-    console.log('ID  | User ID    | Username             | First Name           | Created            | Uses');
-    console.log('----|------------|----------------------|----------------------|--------------------|------');
-    
-    for (const user of users) {
-      const userId = (user.telegramUserId?.toString() || 'N/A').padEnd(10);
-      const username = (user.username || 'N/A').padEnd(20);
-      const firstName = (user.firstName || 'N/A').padEnd(20);
-      const created = new Date(user.createdAt).toLocaleString().slice(0, 18).padEnd(18);
-      const uses = user.useCount.toString().padStart(5);
-      
-      console.log(`${user.id.toString().padStart(3)} | ${userId} | ${username} | ${firstName} | ${created} | ${uses}`);
-    }
-  }
-  
-  db.close();
-  process.exit(0);
-}
-
-// =============================================================================
-// Configuration
-// =============================================================================
+handleCliCommands(process.argv.slice(2));
 
 const config: CoreConfig = getDefaultConfig();
 setCoreConfig(config);
@@ -342,13 +88,9 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const TRUST_DB_PATH = process.env.TRUST_DB_PATH || './rxcafe-trust.db';
 
-// Initialize trust database
 const trustDb = new Database(TRUST_DB_PATH);
-
-// Initialize connected agents store
 connectedAgentStore.setTrustDatabase(trustDb);
 
-// Initialize session store
 const sessionStore = new SessionStore(trustDb.getDatabase());
 setSessionStore(sessionStore);
 
@@ -364,7 +106,6 @@ console.log(`Trust DB: ${TRUST_DB_PATH}`);
 console.log(`Trusted API clients: ${trustDb.getClientCount()}`);
 console.log(`Trusted Telegram users: ${trustDb.getTelegramUserCount()}`);
 
-// Check if we have any trusted API clients
 const hasTrustedClients = trustDb.hasTrustedClients();
 if (!hasTrustedClients) {
   console.log('');
@@ -373,7 +114,6 @@ if (!hasTrustedClients) {
   console.log('');
 }
 
-// Check Telegram trust status
 const hasTrustedTelegramUsers = trustDb.hasTrustedTelegramUsers();
 if (TELEGRAM_TOKEN && !hasTrustedTelegramUsers) {
   console.log('');
@@ -382,22 +122,15 @@ if (TELEGRAM_TOKEN && !hasTrustedTelegramUsers) {
   console.log('');
 }
 
-// Get or create web token for localhost access
 function getOrCreateWebToken(): string {
-  // First check for existing web token
   const existingToken = trustDb.getTokenByDescription('Web Interface');
   if (existingToken) {
     return existingToken;
   }
-  // Generate new token
   return trustDb.addClient('Web Interface');
 }
 
 const webToken = getOrCreateWebToken();
-
-// =============================================================================
-// Client Trust Verification
-// =============================================================================
 
 function createUntrustedResponse(token: string | null): Response {
   const providedToken = token ? maskToken(token) : 'none';
@@ -425,27 +158,22 @@ function createUntrustedResponse(token: string | null): Response {
 
 function verifyClient(request: Request): { trusted: boolean; token: string | null } {
   const token = extractClientToken(request);
-  
   if (!token) {
     return { trusted: false, token: null };
   }
-  
   const isTrusted = trustDb.verifyToken(token);
   return { trusted: isTrusted, token };
 }
 
 function verifyAdmin(request: Request): { isAdmin: boolean; token: string | null; clientId: number | null } {
   const token = extractClientToken(request);
-  
   if (!token) {
     return { isAdmin: false, token: null, clientId: null };
   }
-  
   const clientId = trustDb.getClientIdByToken(token);
   if (!clientId) {
     return { isAdmin: false, token, clientId: null };
   }
-  
   const isAdmin = trustDb.isAdminToken(token);
   return { isAdmin, token, clientId };
 }
@@ -476,829 +204,6 @@ function verifyAgentAuth(request: Request): { agent: ConnectedAgent } | { error:
   return { agent };
 }
 
-// =============================================================================
-// Telegram Bot Integration
-// =============================================================================
-
-// Map Telegram chat IDs to current RXCAFE session ID
-const telegramCurrentSession = new Map<number, string>();
-
-// Map Telegram chat IDs to all accessible session IDs
-const telegramAllSessions = new Map<number, Set<string>>();
-
-// Map Telegram chat IDs to their active outputStream subscriptions
-// Now stores a Map of sessionId -> Subscription for each chat
-const telegramSubscriptions = new Map<number, Map<string, Subscription>>();
-
-let telegramBot: TelegramBot | null = null;
-
-async function initTelegramBot(): Promise<void> {
-  if (!TELEGRAM_TOKEN) {
-    console.log('Telegram bot not configured. Set TELEGRAM_TOKEN to enable.');
-    return;
-  }
-
-  const telegramConfig: TelegramConfig = {
-    token: TELEGRAM_TOKEN,
-    webhookUrl: TELEGRAM_WEBHOOK_URL,
-    polling: !TELEGRAM_WEBHOOK_URL
-  };
-
-  telegramBot = new TelegramBot(telegramConfig);
-  
-  try {
-    await telegramBot.init();
-    
-    // Handle incoming messages
-    telegramBot.onMessage(async (chatId, text, user, voice, audio) => {
-      // Check if user is trusted
-      const isTrusted = trustDb.isTelegramUserTrusted(user.id, user.username);
-      if (!isTrusted) {
-        console.log(`[Telegram] Untrusted user ${user.first_name} (${user.id}) blocked`);
-        await telegramBot!.sendMessage(chatId, 
-          `🔒 *Access Denied*\n\n` +
-          `You are not authorized to use this bot.\n\n` +
-          `Your Telegram ID: \`${user.id}\`\n` +
-          `Username: \`${user.username || 'none'}\`\n\n` +
-          `Contact the admin to get access.`, 
-          { parseMode: 'Markdown' }
-        );
-        return;
-      }
-
-      // Handle voice/audio messages
-      if (voice || audio) {
-        const audioInfo = voice || audio;
-        const duration = audioInfo?.duration || 0;
-        const mimeType = audioInfo?.mime_type || 'audio/ogg';
-        
-        console.log(`[Telegram] Voice/audio message from ${user.first_name} (${user.username || 'no username'}) ID:${user.id}, duration: ${duration}s, mimeType: ${mimeType}`);
-        
-        await handleTelegramAudioMessage(chatId, user, voice, audio);
-        return;
-      }
-
-      // Handle text messages
-      if (!text) return;
-      
-      console.log(`Telegram message from ${user.first_name} (${user.username || 'no username'}) ID:${user.id}: ${text.substring(0, 50)}...`);
-      
-      // Get or create session for this chat
-      let sessionId = telegramCurrentSession.get(chatId);
-      if (!sessionId) {
-        const defaultTelegramSessionId = 'default-telegram';
-        console.log(`[Telegram] Ensuring default session exists: ${defaultTelegramSessionId}`);
-        
-        let session = getSession(defaultTelegramSessionId);
-        
-        if (!session && sessionStore) {
-          // Check if it's in the store
-          const sessionData = await sessionStore.loadSession(defaultTelegramSessionId);
-          if (sessionData) {
-            console.log(`[Telegram] Restoring default session from store`);
-            session = await createSession(config, {
-              agentId: sessionData.agentName,
-              isBackground: sessionData.isBackground,
-              sessionId: defaultTelegramSessionId,
-            });
-            if (session._agentContext) await session._agentContext.loadState();
-          }
-        }
-        
-        if (!session) {
-          console.log(`[Telegram] Creating new default session`);
-          session = await createSession(config, { 
-            sessionId: defaultTelegramSessionId,
-            agentId: 'default'
-          });
-        }
-        
-        sessionId = session.id;
-        telegramCurrentSession.set(chatId, sessionId);
-        
-        if (!telegramAllSessions.has(chatId)) {
-          telegramAllSessions.set(chatId, new Set());
-        }
-        telegramAllSessions.get(chatId)!.add(sessionId);
-        
-        console.log(`[Telegram] Using session ${sessionId} for chat ${chatId}`);
-        await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Ready*\n\nUsing session: \`default-telegram\`\nAgent: ${session.agentName}\n\nType /help for available commands.`, { parseMode: 'Markdown' });
-      }
-      
-      const session = getSession(sessionId);
-      if (!session) {
-        await telegramBot!.sendMessage(chatId, '❌ Session error. Use /new to create a new session.');
-        telegramCurrentSession.delete(chatId);
-        return;
-      }
-      
-      // Ensure we are listening to the session's outputStream
-      ensureTelegramSubscription(chatId, session);
-      
-      // Handle commands
-      if (text === '/start' || text.startsWith('/start ')) {
-        await telegramBot!.sendMessage(chatId, `👋 Welcome to RXCAFE Chat!\n\nCurrent session: \`${sessionId}\`\nAgent: ${session.agentName}\n\nUse /help to see available commands.`, { parseMode: 'Markdown' });
-        return;
-      }
-      
-      if (text === '/help') {
-        await telegramBot!.sendMessage(chatId, `*Available Commands:*
-
-*Session Management:*
-/new [agent] - Create new session
-/sessions - List and switch sessions
-/join <id> - Join an existing session
-/subscribe <id> - Auto-receive updates from a session
-/unsubscribe <id> - Stop auto-updates
-/subscriptions - List auto-subscriptions
-/share - Get shareable link
-/id - Get current session ID
-/agents - List available agents
-
-*Chat:*
-/web <URL> - Fetch web content
-/system <prompt> - Set system prompt
-
-*Current:* \`${sessionId}\`
-*Agent:* ${session.agentName}`, { parseMode: 'Markdown' });
-        return;
-      }
-      
-      if (text === '/id') {
-        await telegramBot!.sendMessage(chatId, `Current Session ID:\n\`${sessionId}\``, { parseMode: 'Markdown' });
-        return;
-      }
-
-      if (text === '/share') {
-        // We'll use the server's webToken if available, but technically anyone with the session ID can see it
-        const url = `${process.env.PUBLIC_URL || 'http://localhost:' + PORT}/#${sessionId}`;
-        await telegramBot!.sendMessage(chatId, `Shareable Web Link:\n${url}`, { parseMode: 'Markdown' });
-        return;
-      }
-
-      if (text.startsWith('/join ')) {
-        const targetId = text.slice(6).trim();
-        const targetSession = getSession(targetId);
-        
-        if (!targetSession) {
-          await telegramBot!.sendMessage(chatId, `❌ Session not found: \`${targetId}\``, { parseMode: 'Markdown' });
-          return;
-        }
-
-        telegramCurrentSession.set(chatId, targetId);
-        if (!telegramAllSessions.has(chatId)) {
-          telegramAllSessions.set(chatId, new Set());
-        }
-        telegramAllSessions.get(chatId)!.add(targetId);
-
-        await telegramBot!.sendMessage(chatId, `✅ Joined session: \`${targetId}\`\nAgent: ${targetSession.agentName}\nName: ${targetSession.displayName || 'None'}`, { parseMode: 'Markdown' });
-        
-        ensureTelegramSubscription(chatId, targetSession);
-        return;
-      }
-
-      if (text === '/subscriptions') {
-        const subs = trustDb.listTelegramSubscriptions(chatId);
-        if (subs.length === 0) {
-          await telegramBot!.sendMessage(chatId, 'No active auto-subscriptions.');
-        } else {
-          const list = subs.map(sid => `• \`${sid}\``).join('\n');
-          await telegramBot!.sendMessage(chatId, `*Your Auto-Subscriptions:*\n\n${list}`, { parseMode: 'Markdown' });
-        }
-        return;
-      }
-
-      if (text.startsWith('/subscribe ')) {
-        const targetId = text.slice(11).trim();
-        trustDb.addTelegramSubscription(chatId, targetId);
-        
-        const targetSession = getSession(targetId);
-        if (targetSession) {
-          ensureTelegramSubscription(chatId, targetSession);
-          await telegramBot!.sendMessage(chatId, `✅ Subscribed to \`${targetId}\`. You will now receive updates automatically.`);
-        } else {
-          await telegramBot!.sendMessage(chatId, `✅ Subscribed to \`${targetId}\`. Updates will start once the session is active.`);
-        }
-        return;
-      }
-
-      if (text.startsWith('/unsubscribe ')) {
-        const targetId = text.slice(13).trim();
-        const success = trustDb.removeTelegramSubscription(chatId, targetId);
-        if (success) {
-          // If it's not the current session, we should unsubscribe the RxJS sub
-          if (sessionId !== targetId) {
-            const subsMap = telegramSubscriptions.get(chatId);
-            if (subsMap instanceof Map) {
-              const sub = subsMap.get(targetId);
-              if (sub) {
-                sub.unsubscribe();
-                subsMap.delete(targetId);
-              }
-            }
-          }
-          await telegramBot!.sendMessage(chatId, `✅ Unsubscribed from \`${targetId}\`.`);
-        } else {
-          await telegramBot!.sendMessage(chatId, `❌ Not subscribed to \`${targetId}\`.`);
-        }
-        return;
-      }
-      
-      if (text === '/agents') {
-        const agents = listAgentsFromCore();
-        const agentList = agents.map(a => {
-          const bg = a.startInBackground ? ' [background]' : '';
-          return `• *${a.name}*${bg}\n  ${a.description || 'No description'}`;
-        }).join('\n');
-        await telegramBot!.sendMessage(chatId, `*Available Agents:*\n\n${agentList}`, { parseMode: 'Markdown' });
-        return;
-      }
-      
-      if (text === '/sessions') {
-        const activeSessions = listActiveSessions();
-        const allSessions = [...activeSessions];
-        const seenIds = new Set(activeSessions.map(s => s.id));
-        
-        if (sessionStore) {
-          const persisted = await sessionStore.listAllSessions();
-          for (const ps of persisted) {
-            if (!seenIds.has(ps.id)) {
-              allSessions.push({
-                id: ps.id,
-                agentName: ps.agentName,
-                isBackground: ps.isBackground,
-                displayName: ps.id === ps.agentName ? ps.agentName : undefined
-              });
-            }
-          }
-        }
-
-        if (allSessions.length === 0) {
-          await telegramBot!.sendMessage(chatId, 'No sessions found. Use /new to create one.');
-          return;
-        }
-        
-        const buttons = allSessions.map(s => {
-          const name = s.displayName || s.agentName;
-          const current = s.id === sessionId ? '✓ ' : '';
-          const bg = s.isBackground ? ' ⚙️' : '';
-          return [{ text: `${current}${name}${bg}`, callback_data: `switch:${s.id}` }];
-        }) as any[][];
-        
-        await telegramBot!.sendMessage(chatId, `*All Available Sessions:*\nSelect a session to switch:`, { 
-          parseMode: 'Markdown',
-          replyMarkup: { inline_keyboard: buttons }
-        });
-        return;
-      }
-      
-      if (text.startsWith('/switch ')) {
-        const targetSessionId = text.slice(8).trim();
-        await switchTelegramSession(chatId, targetSessionId);
-        return;
-      }
-      
-      if (text === '/new' || text.startsWith('/new ')) {
-        const agentName = text.slice(4).trim() || 'default';
-        console.log(`[Telegram] Creating new session for chat ${chatId} with agent ${agentName}`);
-        
-        try {
-          const newSession = await createSession(config, { agentId: agentName });
-          
-          if (!telegramAllSessions.has(chatId)) {
-            telegramAllSessions.set(chatId, new Set());
-          }
-          telegramAllSessions.get(chatId)!.add(newSession.id);
-          telegramCurrentSession.set(chatId, newSession.id);
-          
-          await telegramBot!.sendMessage(chatId, `✅ New session created\n\nSession: \`${newSession.id}\`\nAgent: ${newSession.agentName}`, { parseMode: 'Markdown' });
-        } catch (err) {
-          await telegramBot!.sendMessage(chatId, `❌ Failed to create session: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        }
-        return;
-      }
-      
-      if (text.startsWith('/web ')) {
-        const url = text.slice(5).trim();
-        await handleTelegramWebCommand(chatId, session, url);
-        return;
-      }
-      
-      if (text.startsWith('/system ')) {
-        const prompt = text.slice(8).trim();
-        handleTelegramSystemCommand(chatId, session, prompt);
-        return;
-      }
-      
-      // Regular message - process through LLM
-      await handleTelegramMessage(chatId, session, text);
-    });
-    
-    // Handle callback queries (trust buttons and session switcher)
-    telegramBot.onCallback(async (chatId, data, user, callbackId) => {
-      if (data.startsWith('trust:')) {
-        const parts = data.split(':');
-        const chunkId = parts[1];
-        const trusted = parts[2] === 'true';
-        
-        const sessionId = telegramCurrentSession.get(chatId);
-        if (!sessionId) return;
-        
-        const session = getSession(sessionId);
-        if (!session) return;
-        
-        const result = toggleChunkTrust(session, chunkId, trusted);
-        
-        if (result) {
-          await telegramBot!.answerCallback(callbackId, trusted ? '✅ Trusted' : '❌ Untrusted');
-          await telegramBot!.sendMessage(chatId, trusted ? '✅ Chunk trusted and added to LLM context' : '❌ Chunk untrusted');
-        }
-      } else if (data.startsWith('switch:')) {
-        const targetSessionId = data.split(':')[1];
-        await telegramBot!.answerCallback(callbackId, '🔄 Switching...');
-        await switchTelegramSession(chatId, targetSessionId);
-      }
-    });
-    
-  } catch (error) {
-    console.error('Failed to initialize Telegram bot:', error);
-    telegramBot = null;
-  }
-}
-
-async function handleTelegramWebCommand(chatId: number, session: Session, url: string): Promise<void> {
-  if (!telegramBot) return;
-  
-  await telegramBot.sendMessage(chatId, `🌐 Fetching ${url}...`);
-  
-  try {
-    const chunk = await fetchWebContent(url);
-    session.inputStream.next(chunk);
-    
-    // Store chunk info for trust buttons
-    const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
-    const messageText = `🌐 *Web Content Fetched*\n\nSource: ${url}\nStatus: ${isTrusted ? '✅ Trusted' : '⚠️ Untrusted'}\n\n${(chunk.content as string).substring(0, 500)}${(chunk.content as string).length > 500 ? '...' : ''}`;
-    
-    if (!isTrusted) {
-      // Send with trust buttons
-      await telegramBot.sendMessage(chatId, messageText, {
-        parseMode: 'Markdown',
-        replyMarkup: telegramBot.createTrustKeyboard(chunk.id)
-      });
-    } else {
-      await telegramBot.sendMessage(chatId, messageText, { parseMode: 'Markdown' });
-    }
-    
-  } catch (error) {
-    await telegramBot.sendMessage(chatId, `❌ Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-function handleTelegramSystemCommand(chatId: number, session: Session, prompt: string): void {
-  if (!telegramBot) return;
-  
-  addChunkToSession(session, {
-    content: prompt,
-    producer: 'com.rxcafe.system-prompt',
-    annotations: {
-      'chat.role': 'system',
-      'system.prompt': true
-    }
-  });
-  telegramBot.sendMessage(chatId, `✅ System prompt set:\n\n\`${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}\``, { parseMode: 'Markdown' });
-}
-
-async function handleTelegramAudioMessage(chatId: number, user: TelegramUser, voice?: TelegramVoice, audio?: TelegramAudio): Promise<void> {
-  if (!telegramBot) return;
-
-  const audioInfo = voice || audio;
-  if (!audioInfo) return;
-
-  const duration = audioInfo.duration || 0;
-  const mimeType = audioInfo.mime_type || 'audio/ogg';
-  const fileId = audioInfo.file_id;
-
-  console.log(`[Telegram] Processing audio message, duration: ${duration}s, mimeType: ${mimeType}`);
-
-  // Send "processing" indicator
-  let statusMessage: any;
-  try {
-    statusMessage = await telegramBot.sendMessage(chatId, '🎙️ Processing audio...');
-  } catch (error) {
-    console.error('[Telegram] Failed to send status message:', error);
-  }
-
-  try {
-    // Get file path from Telegram
-    const file = await telegramBot.getFile(fileId);
-    if (!file.file_path) {
-      throw new Error('Failed to get file path from Telegram');
-    }
-
-    console.log(`[Telegram] Downloading file: ${file.file_path}`);
-
-    // Download the file
-    const audioData = await telegramBot.downloadFile(file.file_path);
-
-    console.log(`[Telegram] Downloaded ${audioData.length} bytes`);
-
-    // Get or create session for this chat
-    let sessionId = telegramCurrentSession.get(chatId);
-    if (!sessionId) {
-      const defaultTelegramSessionId = 'default-telegram';
-      console.log(`[Telegram] Ensuring default session exists: ${defaultTelegramSessionId}`);
-
-      let session = getSession(defaultTelegramSessionId);
-
-      if (!session && sessionStore) {
-        // Check if it's in the store
-        const sessionData = await sessionStore.loadSession(defaultTelegramSessionId);
-        if (sessionData) {
-          console.log(`[Telegram] Restoring default session from store`);
-          session = await createSession(config, {
-            agentId: sessionData.agentName,
-            isBackground: sessionData.isBackground,
-            sessionId: defaultTelegramSessionId,
-          });
-          if (session._agentContext) await session._agentContext.loadState();
-        }
-      }
-
-      if (!session) {
-        console.log(`[Telegram] Creating new default session`);
-        session = await createSession(config, { 
-          sessionId: defaultTelegramSessionId,
-          agentId: 'default'
-        });
-      }
-
-      sessionId = session.id;
-      telegramCurrentSession.set(chatId, sessionId);
-
-      if (!telegramAllSessions.has(chatId)) {
-        telegramAllSessions.set(chatId, new Set());
-      }
-      telegramAllSessions.get(chatId)!.add(sessionId);
-
-      console.log(`[Telegram] Using session ${sessionId} for chat ${chatId}`);
-    }
-
-    const session = getSession(sessionId);
-    if (!session) {
-      await telegramBot.sendMessage(chatId, '❌ Session error. Use /new to create a new session.');
-      telegramCurrentSession.delete(chatId);
-      return;
-    }
-
-    // Ensure we are listening to the session's outputStream
-    ensureTelegramSubscription(chatId, session);
-
-    // Create binary chunk for audio
-    const audioChunk = createBinaryChunk(
-      audioData,
-      mimeType,
-      'com.rxcafe.user',
-      {
-        'chat.role': 'user',
-        'audio.duration': duration,
-        'telegram.chatId': chatId,
-        'client.type': 'telegram',
-        'telegram.voice': !!voice,
-        'telegram.audio': !!audio
-      }
-    );
-
-    // Send audio chunk to session input stream
-    session.inputStream.next(audioChunk);
-
-    // Delete status message
-    if (statusMessage?.message_id) {
-      try {
-        await telegramBot.deleteMessage(chatId, statusMessage.message_id);
-      } catch {
-        // Ignore errors deleting status message
-      }
-    }
-
-    console.log(`[Telegram] Audio chunk sent to session ${sessionId}`);
-
-  } catch (error) {
-    console.error('[Telegram] Error processing audio:', error);
-    await telegramBot.sendMessage(chatId, `❌ Failed to process audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-async function handleTelegramMessage(chatId: number, session: Session, message: string): Promise<void> {
-  if (!telegramBot) return;
-  
-  console.log(`[Telegram] Processing message: "${message.substring(0, 50)}..."`);
-  
-  // Send "typing" indicator
-  let statusMessage: any;
-  try {
-    statusMessage = await telegramBot.sendMessage(chatId, '🤔 Thinking...');
-    console.log(`[Telegram] Sent status message, ID: ${statusMessage.message_id}`);
-  } catch (error) {
-    console.error('[Telegram] Failed to send status message:', error);
-  }
-  
-  let fullResponse = '';
-  let messageId: number | null = null;
-  let tokenCount = 0;
-  let lastUpdateResponse = '';
-  let updateInProgress = false;
-  
-  try {
-    console.log(`[Telegram] Starting LLM evaluation...`);
-    
-    const callbacks: ChatCallbacks = {
-      onToken: (token: string) => {
-        tokenCount++;
-        fullResponse += token;
-        
-        // Update message every 20 characters, but only if not already updating
-        // This prevents the race condition that causes duplicate messages
-        if (fullResponse.length - lastUpdateResponse.length >= 20 && !updateInProgress) {
-          updateInProgress = true;
-          updateTelegramMessage(chatId, fullResponse, messageId).then(id => {
-            if (id) messageId = id;
-            lastUpdateResponse = fullResponse;
-            updateInProgress = false;
-          }).catch(() => {
-            updateInProgress = false;
-          });
-        }
-      },
-      onFinish: async () => {
-        console.log(`[Telegram] LLM evaluation complete. Tokens: ${tokenCount}, Response length: ${fullResponse.length}`);
-        
-        // Wait for any pending update to finish to ensure we have the correct messageId
-        const start = Date.now();
-        while (updateInProgress && Date.now() - start < 5000) {
-          await new Promise(r => setTimeout(r, 100));
-        }
-
-        // Final message update
-        finalizeTelegramMessage(chatId, fullResponse, messageId, statusMessage?.message_id);
-
-        // Clear callbacks
-        if (session.callbacks === callbacks) {
-            session.callbacks = null;
-            if (session._agentContext) session._agentContext.callbacks = null;
-        }
-      },
-      onError: (error: Error) => {
-        console.error('[Telegram] LLM error:', error);
-        
-        // Wait for any pending update to finish
-        const waitAndSend = async () => {
-          const start = Date.now();
-          while (updateInProgress && Date.now() - start < 5000) {
-            await new Promise(r => setTimeout(r, 100));
-          }
-          await telegramBot!.sendMessage(chatId, `❌ Error: ${error.message}`);
-          
-          // Delete status message if it exists
-          if (statusMessageId) {
-            try {
-              await telegramBot!.deleteMessage(chatId, statusMessageId);
-            } catch { /* ignore */ }
-          }
-        };
-
-        waitAndSend();
-        
-        // Clear callbacks
-        if (session.callbacks === callbacks) {
-            session.callbacks = null;
-            if (session._agentContext) session._agentContext.callbacks = null;
-        }
-      }
-    };
-
-    // Tag the callbacks so we know they belong to THIS telegram chat
-    (callbacks as any).telegramChatId = chatId;
-
-    await processChatMessage(
-      session,
-      message,
-      callbacks,
-      config,
-      { 'client.type': 'telegram', 'telegram.chatId': chatId }
-    );
-    
-  } catch (error) {
-    console.error('[Telegram] Error processing message:', error);
-    try {
-      await telegramBot.sendMessage(chatId, `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } catch (sendError) {
-      console.error('[Telegram] Failed to send error message:', sendError);
-    }
-  }
-}
-
-async function updateTelegramMessage(chatId: number, text: string, messageId: number | null): Promise<number | null> {
-  if (!telegramBot) return null;
-  
-  try {
-    if (!messageId) {
-      // First update - need to send new message
-      const msg = await telegramBot.sendMessage(chatId, text + ' ▌');
-      return msg.message_id;
-    } else {
-      await telegramBot.editMessage(chatId, messageId, text + ' ▌');
-      return messageId;
-    }
-  } catch (error) {
-    console.error('[Telegram] Failed to update message:', error);
-    return messageId;
-  }
-}
-
-async function finalizeTelegramMessage(chatId: number, text: string, messageId: number | null, statusMessageId?: number): Promise<void> {
-  if (!telegramBot) return;
-  
-  try {
-    if (!messageId) {
-      // If no updates were made and there's no text, just be silent (e.g. command handled by agent)
-      if (text) {
-        await telegramBot.sendMessage(chatId, text);
-      }
-    } else {
-      // Update with final text (no cursor)
-      await telegramBot.editMessage(chatId, messageId, text);
-    }
-    
-    // Delete status message if it exists
-    if (statusMessageId) {
-      try {
-        await telegramBot.deleteMessage(chatId, statusMessageId);
-      } catch {
-        // Ignore errors deleting status message
-      }
-    }
-  } catch (error) {
-    console.error('[Telegram] Failed to finalize message:', error);
-  }
-}
-
-async function switchTelegramSession(chatId: number, targetSessionId: string): Promise<void> {
-  if (!telegramBot) return;
-  
-  // Clean up transient subscription to previous session (only if not explicitly subscribed)
-  const previousSessionId = telegramCurrentSession.get(chatId);
-  if (previousSessionId && previousSessionId !== targetSessionId) {
-    const persistentSubs = trustDb.listTelegramSubscriptions(chatId);
-    if (!persistentSubs.includes(previousSessionId)) {
-      const subsMap = telegramSubscriptions.get(chatId);
-      if (subsMap) {
-        const sub = subsMap.get(previousSessionId);
-        if (sub) {
-          sub.unsubscribe();
-          subsMap.delete(previousSessionId);
-          console.log(`[Telegram] Unsubscribed chat ${chatId} from transient session ${previousSessionId}`);
-        }
-      }
-    }
-  }
-  
-  let targetSession = getSession(targetSessionId);
-  
-  // If not active, try loading from persistence
-  if (!targetSession && sessionStore) {
-    const sessionData = await sessionStore.loadSession(targetSessionId);
-    if (sessionData) {
-      console.log(`[Telegram] Restoring session from persistence: ${targetSessionId}`);
-      try {
-        targetSession = await createSession(config, {
-          agentId: sessionData.agentName,
-          isBackground: sessionData.isBackground,
-          sessionId: targetSessionId,
-          ...sessionData.config,
-          systemPrompt: sessionData.systemPrompt || undefined,
-        });
-        
-        if (targetSession._agentContext) {
-          await targetSession._agentContext.loadState();
-        }
-      } catch (err) {
-        console.error(`[Telegram] Failed to restore session ${targetSessionId}:`, err);
-      }
-    }
-  }
-
-  if (!targetSession) {
-    await telegramBot.sendMessage(chatId, `❌ Session not found or expired: \`${targetSessionId}\``, { parseMode: 'Markdown' });
-    return;
-  }
-  
-  // Add to user's list of accessible sessions
-  if (!telegramAllSessions.has(chatId)) {
-    telegramAllSessions.set(chatId, new Set());
-  }
-  telegramAllSessions.get(chatId)!.add(targetSessionId);
-
-  telegramCurrentSession.set(chatId, targetSessionId);
-  await telegramBot.sendMessage(chatId, `✅ Switched to session: \`${targetSessionId}\`\nAgent: ${targetSession.agentName}\nName: ${targetSession.displayName || 'None'}`, { parseMode: 'Markdown' });
-  
-  ensureTelegramSubscription(chatId, targetSession);
-}
-
-function ensureTelegramSubscription(chatId: number, session: Session) {
-  let subsMap = telegramSubscriptions.get(chatId);
-  if (!subsMap) {
-    subsMap = new Map<string, Subscription>();
-    telegramSubscriptions.set(chatId, subsMap);
-  }
-  
-  if (subsMap.has(session.id)) {
-    return;
-  }
-
-  console.log(`[Telegram] Subscribing chat ${chatId} to session ${session.id} outputStream`);
-
-  const sub = session.outputStream.subscribe({
-    next: async (chunk: Chunk) => {
-      if (!telegramBot) return;
-      
-      // Skip user messages that originated from THIS specific Telegram chat to avoid echoing
-      if (chunk.annotations['chat.role'] === 'user' && chunk.annotations['telegram.chatId'] === chatId) return;
-      
-      // Skip assistant tokens (they are handled via onToken callbacks during active generation)
-      if (chunk.annotations['llm.stream']) return;
-
-      if (chunk.contentType === 'binary') {
-        const { data, mimeType } = chunk.content as any;
-        const caption = chunk.annotations['image.description'] || chunk.annotations['audio.description'];
-        
-        let uint8;
-        if (data instanceof Uint8Array) {
-          uint8 = data;
-        } else if (Array.isArray(data)) {
-          uint8 = new Uint8Array(data);
-        } else if (typeof data === 'object' && data !== null) {
-          if (data.type === 'Buffer' && Array.isArray(data.data)) {
-            uint8 = new Uint8Array(data.data);
-          } else {
-            uint8 = new Uint8Array(Object.values(data));
-          }
-        } else {
-          console.error('[Telegram] Invalid binary data format', data);
-          return;
-        }
-
-        try {
-          if (mimeType.startsWith('image/')) {
-            await telegramBot.sendPhoto(chatId, uint8, caption);
-          } else if (mimeType.startsWith('audio/')) {
-            await telegramBot.sendAudio(chatId, uint8, caption);
-          }
-        } catch (err) {
-          console.error('[Telegram] Failed to send media:', err);
-        }
-      }
-      // Handle text messages (User messages from other clients, Assistant responses, System updates, or Web content)
-      else if (chunk.contentType === 'text') {
-          const role = chunk.annotations['chat.role'];
-          const isAssistant = role === 'assistant';
-          const isUser = role === 'user';
-          const isSystem = role === 'system';
-          const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
-          
-          // 1. Send User messages that originated from elsewhere (e.g. Web UI)
-          if (isUser) {
-              // We already filtered out 'user' chunks from THIS chat at the top of next()
-              await telegramBot.sendMessage(chatId, `👤 *User:* ${chunk.content}`, { parseMode: 'Markdown' });
-          }
-          // 2. Send Web content (e.g. results of /web command on Web UI)
-          else if (isWeb) {
-              const url = chunk.annotations['web.source-url'] || 'unknown';
-              await telegramBot.sendMessage(chatId, `🌐 *Web Content:* ${url}\n\n${(chunk.content as string).substring(0, 500)}...`, { parseMode: 'Markdown' });
-          }
-          // 3. Send System updates (e.g. /system changes from Web UI)
-          else if (isSystem) {
-              await telegramBot.sendMessage(chatId, `⚙️ *System:* ${chunk.content}`, { parseMode: 'Markdown' });
-          }
-          // 4. Send Assistant messages only if we aren't currently "streaming" them
-          // via interactive callbacks (prevents doubles).
-          // We check if the active callbacks belong to THIS specific Telegram chat.
-          const isActiveTurnForUs = (session.callbacks as any)?.telegramChatId === chatId;
-          const isStreamingProducer = chunk.producer === 'com.rxcafe.assistant';
-          
-          if (isAssistant && (!isActiveTurnForUs || !isStreamingProducer)) {
-              await telegramBot.sendMessage(chatId, chunk.content as string);
-          }
-      }
-    }
-  });
-  
-  subsMap.set(session.id, sub);
-}
-
-// =============================================================================
-// API Request Handlers
-// =============================================================================
-
 async function handleCreateSession(body?: any): Promise<Response> {
   try {
     const agentId = body?.agentId || 'default';
@@ -1314,7 +219,6 @@ async function handleCreateSession(body?: any): Promise<Response> {
       });
     }
     
-    // Build runtime config from request
     const runtimeConfig: RuntimeSessionConfig = {};
     
     if (body?.backend) runtimeConfig.backend = body.backend;
@@ -1322,7 +226,6 @@ async function handleCreateSession(body?: any): Promise<Response> {
     if (body?.systemPrompt) runtimeConfig.systemPrompt = body.systemPrompt;
     if (body?.llmParams) runtimeConfig.llmParams = body.llmParams;
     
-    // Validate config against agent's schema
     if (agent.configSchema) {
       const errors = await validateConfigAgainstSchema(runtimeConfig, agent.configSchema);
       if (errors.length > 0) {
@@ -1344,7 +247,6 @@ async function handleCreateSession(body?: any): Promise<Response> {
     
     const session = await createSession(config, options);
     
-    // Emit runtime config as a null chunk to history
     if (body?.backend || body?.model || body?.systemPrompt || body?.llmParams) {
       const annotations: Record<string, any> = {
         'config.type': 'runtime',
@@ -1407,7 +309,6 @@ async function handleListAgents(): Promise<Response> {
 
 async function handleListSessions(): Promise<Response> {
   const activeSessions = listActiveSessions();
-  
   const allSessionIds = new Set(activeSessions.map(s => s.id));
   
   if (sessionStore) {
@@ -1418,7 +319,7 @@ async function handleListSessions(): Promise<Response> {
           id: ps.id,
           agentName: ps.agentName,
           isBackground: ps.isBackground,
-          displayName: ps.id === ps.agentName ? ps.agentName : undefined // Default for background agents
+          displayName: ps.id === ps.agentName ? ps.agentName : undefined
         });
       }
     }
@@ -1582,10 +483,8 @@ async function handleAddChunk(sessionId: string, options: AddChunkOptions): Prom
     });
   }
   
-  // Runtime config chunks should be emitted to inputStream so they're processed
   const isRuntimeConfig = options.contentType === 'null' && options.annotations?.['config.type'] === 'runtime';
   
-  // Validate runtime config against agent schema
   if (isRuntimeConfig && options.annotations) {
     const agent = getAgent(session.agentName);
     if (agent?.configSchema) {
@@ -1595,7 +494,6 @@ async function handleAddChunk(sessionId: string, options: AddChunkOptions): Prom
         systemPrompt: options.annotations['config.systemPrompt'],
       };
       
-      // Extract llmParams from annotations
       const llmParams: any = {};
       const llmKeys = ['temperature', 'maxTokens', 'topP', 'topK', 'repeatPenalty', 'stop', 'seed', 'maxContextLength', 'numCtx'];
       for (const key of llmKeys) {
@@ -1675,7 +573,6 @@ async function handleChatStream(
     });
   }
   
-  // Handle /system command
   if (message.startsWith('/system ')) {
     const prompt = message.slice(8).trim();
     const chunk = addChunkToSession(session, {
@@ -1695,10 +592,8 @@ async function handleChatStream(
     });
   }
   
-  // Build SSE response stream
   const stream = new ReadableStream({
     start(controller) {
-      // Process the chat message
       processChatMessage(
         session,
         message,
@@ -1739,8 +634,6 @@ async function handleChatStream(
           controller.close();
         } catch { /* controller closed */ }
       });
-      
-      // User chunk confirmation sent via general SSE stream
     },
     cancel() {
       abortGeneration(session);
@@ -1757,7 +650,7 @@ async function handleChatStream(
 }
 
 function handleSessionStream(sessionId: string): Response {
-  let session = getSession(sessionId);
+  const session = getSession(sessionId);
   
   if (!session) {
     return new Response(JSON.stringify({ error: 'Session not found' }), {
@@ -1766,23 +659,18 @@ function handleSessionStream(sessionId: string): Response {
     });
   }
   
-  // Capture cleanup in closure so cancel() can reach it without relying on
-  // `this` (which refers to the underlyingSource object, not the controller).
   let cleanup: (() => void) | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder();
       
-      // Send initial connection message
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected', sessionId })}\n\n`));
       
-       // Subscribe to output stream
-      const outputSub = session!.outputStream.subscribe({
+      const outputSub = session.outputStream.subscribe({
         next: (chunk: Chunk) => {
           if (chunk.contentType === 'text' || chunk.contentType === 'binary') {
             try {
-              // Handle binary chunk serialization
               let serializedChunk = chunk;
               if (chunk.contentType === 'binary') {
                 serializedChunk = {
@@ -1800,10 +688,6 @@ function handleSessionStream(sessionId: string): Response {
               })}\n\n`));
             } catch (error) {
               console.error('[SSE] Failed to serialize chunk:', chunk.id, error);
-              console.error('[SSE] Chunk type:', chunk.contentType);
-              console.error('[SSE] Chunk data preview:', JSON.stringify(chunk, (k, v) => 
-                k === 'data' && typeof v === 'object' ? `Uint8Array(${v.length})` : v
-              ));
             }
           }
         },
@@ -1817,8 +701,7 @@ function handleSessionStream(sessionId: string): Response {
         }
       });
       
-      // Subscribe to error stream
-      const errorSub = session!.errorStream.subscribe({
+      const errorSub = session.errorStream.subscribe({
         next: (err: Error) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
@@ -1867,564 +750,6 @@ async function handleAbort(sessionId: string): Promise<Response> {
     headers: { 'Content-Type': 'application/json' }
   });
 }
-
-// =============================================================================
-// Frontend Serving
-// =============================================================================
-
-function getFrontendHtml(token?: string): string {
-  try {
-    let html = readFileSync(join(__dirname, 'frontend', 'index.html'), 'utf-8');
-    // Inject token into HTML if provided
-    if (token) {
-      const tokenScript = `<script>window.RXCAFE_TOKEN = "${token}";</script>`;
-      html = html.replace('</head>', `${tokenScript}</head>`);
-    }
-    return html;
-  } catch {
-    return `<!DOCTYPE html>
-<html>
-<head><title>RXCAFE Chat</title></head>
-<body>
-<h1>RXCAFE Chat</h1>
-<p>Frontend not found.</p>
-</body>
-</html>`;
-  }
-}
-
-function getFrontendJs(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'app.js'), 'utf-8');
-  } catch {
-    return 'console.error("Frontend JS not found");';
-  }
-}
-
-function getFrontendCss(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'styles.css'), 'utf-8');
-  } catch {
-    return '';
-  }
-}
-
-function getManifest(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'manifest.json'), 'utf-8');
-  } catch {
-    return '{}';
-  }
-}
-
-function getServiceWorker(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'sw.js'), 'utf-8');
-  } catch {
-    return '';
-  }
-}
-
-function getIcon(size: number): Buffer | null {
-  try {
-    return readFileSync(join(__dirname, 'frontend', `icon-${size}.png`));
-  } catch {
-    return null;
-  }
-}
-
-function getIconSvg(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'icon.svg'), 'utf-8');
-  } catch {
-    return '<svg xmlns="http://www.w3.org/2000/svg"/>';
-  }
-}
-
-function getWidgetFile(filename: string): string | null {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'widgets', filename), 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-function getWidgetCss(): string {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'widgets', 'styles.css'), 'utf-8');
-  } catch {
-    return '';
-  }
-}
-
-function getJsFile(filename: string): string | null {
-  try {
-    return readFileSync(join(__dirname, 'frontend', 'js', filename), 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-// =============================================================================
-// HTTP Server
-// =============================================================================
-
-const server = serve({
-  port: PORT,
-  idleTimeout: 255,
-  async fetch(request) {
-    const url = new URL(request.url);
-    const pathname = url.pathname;
-    
-    // CORS headers
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-    
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
-    }
-    
-    // Serve frontend (no auth required for frontend files)
-    if (pathname === '/' || pathname === '/index.html') {
-      return new Response(getFrontendHtml(webToken), {
-        headers: { 'Content-Type': 'text/html', ...corsHeaders }
-      });
-    }
-    
-    if (pathname === '/app.js') {
-      return new Response(getFrontendJs(), {
-        headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
-      });
-    }
-    
-    if (pathname === '/styles.css') {
-      return new Response(getFrontendCss(), {
-        headers: { 'Content-Type': 'text/css', ...corsHeaders }
-      });
-    }
-    
-    // PWA files
-    if (pathname === '/manifest.json') {
-      return new Response(getManifest(), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-    
-    if (pathname === '/sw.js') {
-      return new Response(getServiceWorker(), {
-        headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
-      });
-    }
-    
-    // Widget files (AFE - Agent Form Elements)
-    if (pathname === '/widgets/styles.css') {
-      return new Response(getWidgetCss(), {
-        headers: { 'Content-Type': 'text/css', ...corsHeaders }
-      });
-    }
-    
-    if (pathname.startsWith('/widgets/')) {
-      const filename = pathname.slice(9); // Remove '/widgets/'
-      const content = getWidgetFile(filename);
-      if (content !== null) {
-        const contentType = filename.endsWith('.js') ? 'application/javascript' : 
-                           filename.endsWith('.css') ? 'text/css' : 'text/plain';
-        return new Response(content, {
-          headers: { 'Content-Type': contentType, ...corsHeaders }
-        });
-      }
-    }
-    
-    // JS module files
-    if (pathname.startsWith('/js/')) {
-      const filename = pathname.slice(4); // Remove '/js/'
-      const content = getJsFile(filename);
-      if (content !== null) {
-        return new Response(content, {
-          headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
-        });
-      }
-    }
-    
-    if (pathname === '/icon.svg') {
-      return new Response(getIconSvg(), {
-        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
-      });
-    }
-    
-    if (pathname === '/icon-192.png') {
-      const icon = getIcon(192);
-      if (icon) {
-        return new Response(icon, {
-          headers: { 'Content-Type': 'image/png', ...corsHeaders }
-        });
-      }
-      // Fallback to SVG
-      return new Response(getIconSvg(), {
-        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
-      });
-    }
-    
-    if (pathname === '/icon-512.png') {
-      const icon = getIcon(512);
-      if (icon) {
-        return new Response(icon, {
-          headers: { 'Content-Type': 'image/png', ...corsHeaders }
-        });
-      }
-      // Fallback to SVG
-      return new Response(getIconSvg(), {
-        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
-      });
-    }
-    
-    // Health check (no auth required)
-    if (pathname === '/api/health') {
-      return new Response(JSON.stringify({ 
-        status: 'ok',
-        timestamp: Date.now(),
-        backend: config.backend,
-        koboldUrl: config.koboldBaseUrl,
-        ollamaUrl: config.ollamaBaseUrl,
-        ollamaModel: config.ollamaModel,
-        authRequired: true,
-        trustedClients: trustDb.getClientCount()
-      }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders }
-      });
-    }
-    
-    // Connected Agents API (uses agent auth, not client trust)
-    // Registration requires client trust (handled below)
-    // All other endpoints use X-API-Key from the agent's registration
-    
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+$/) && request.method === 'DELETE') {
-      const agentId = pathname.split('/')[3];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleUnregisterConnectedAgent(agentId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/sessions$/) && request.method === 'GET') {
-      const agentId = pathname.split('/')[3];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleGetAgentSessions(agentId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'POST') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleAgentSubscribe(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'DELETE') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleAgentUnsubscribe(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'POST') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleAgentJoin(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'DELETE') {
-      const parts = pathname.split('/');
-      const agentId = parts[3];
-      const sessionId = parts[5];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      if (authResult.agent.id !== agentId) {
-        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
-      }
-      const response = handleAgentLeave(agentId, sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/session\/[^/]+\/connected-agents$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const authResult = verifyAgentAuth(request);
-      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
-      const response = handleGetSessionConnectedAgents(sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/session\/[^/]+\/stream\/agent$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = handleAgentSessionStream(request, sessionId);
-      return response;
-    }
-
-    if (pathname.match(/^\/api\/session\/[^/]+\/agent-chunk$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleAgentProduceChunk(request, sessionId);
-      return addCors(response, corsHeaders);
-    }
-    
-    // Verify client for all API endpoints below
-    const { trusted, token } = verifyClient(request);
-    if (!trusted) {
-      return addCors(createUntrustedResponse(token), corsHeaders);
-    }
-    
-    // Telegram webhook endpoint
-    if (pathname === '/webhook/telegram' && request.method === 'POST') {
-      if (!telegramBot) {
-        return new Response(JSON.stringify({ error: 'Telegram bot not configured' }), {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      
-      const update = await request.json();
-      await telegramBot.handleUpdate(update);
-      
-      return new Response('OK', { status: 200 });
-    }
-    
-    // API Routes
-    if (pathname === '/api/agents' && request.method === 'GET') {
-      const response = await handleListAgents();
-      return addCors(response, corsHeaders);
-    }
-    
-    if (pathname === '/api/sessions' && request.method === 'GET') {
-      const response = await handleListSessions();
-      return addCors(response, corsHeaders);
-    }
-    
-    if (pathname === '/api/session' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      const response = await handleCreateSession(body);
-      return addCors(response, corsHeaders);
-    }
-
-    if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleDeleteSession(sessionId);
-      return addCors(response, corsHeaders);
-    }
-    
-    if (pathname === '/api/models' && request.method === 'GET') {
-      const backend = url.searchParams.get('backend') || undefined;
-      const response = await handleListModels(backend);
-      return addCors(response, corsHeaders);
-    }
-    
-    if (pathname.match(/^\/api\/session\/[^/]+\/history$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleGetHistory(sessionId);
-      return addCors(response, corsHeaders);
-    }
-    
-    if (pathname.match(/^\/api\/session\/[^/]+\/stream$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = handleSessionStream(sessionId);
-      return response;
-    }
-    
-    // Error stream endpoint (SSE)
-    if (pathname.match(/^\/api\/session\/[^/]+\/errors$/) && request.method === 'GET') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleErrorStream(sessionId);
-      return addCors(response, corsHeaders);
-    }
-    
-    // Web fetch endpoint
-    if (pathname.match(/^\/api\/session\/[^/]+\/web$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const body = await request.json();
-      const urlToFetch = body.url;
-      
-      if (!urlToFetch) {
-        return new Response(JSON.stringify({ error: 'URL required' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        });
-      }
-      
-      const response = await handleFetchWeb(sessionId, urlToFetch);
-      return addCors(response, corsHeaders);
-    }
-    
-    // Add chunk endpoint
-    if (pathname.match(/^\/api\/session\/[^/]+\/chunk$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const body = await request.json();
-      
-      const response = await handleAddChunk(sessionId, {
-        content: body.content,
-        contentType: body.contentType,
-        producer: body.producer,
-        annotations: body.annotations,
-        emit: body.emit === true
-      });
-      return addCors(response, corsHeaders);
-    }
-    
-    // Trust toggle endpoint
-    if (pathname.match(/^\/api\/session\/[^/]+\/chunk\/[^/]+\/trust$/) && request.method === 'POST') {
-      const parts = pathname.split('/');
-      const sessionId = parts[3];
-      const chunkId = parts[5];
-      const body = await request.json();
-      const trusted = body.trusted === true;
-      
-      const response = await handleToggleTrust(sessionId, chunkId, trusted);
-      return addCors(response, corsHeaders);
-    }
-    
-     if (pathname.match(/^\/api\/chat\/[^/]+$/) && request.method === 'POST') {
-       const sessionId = pathname.split('/')[3];
-       const body = await request.json();
-       
-       // Handle audio messages
-       if (body.audio) {
-         const session = getSession(sessionId);
-         if (!session) {
-           return new Response(JSON.stringify({ error: 'Session not found' }), {
-             status: 404,
-             headers: { 'Content-Type': 'application/json', ...corsHeaders }
-           });
-         }
-         
-         const { data, mimeType, duration } = body.audio;
-         if (!data || !mimeType) {
-           return new Response(JSON.stringify({ error: 'Audio data and MIME type required' }), {
-             status: 400,
-             headers: { 'Content-Type': 'application/json', ...corsHeaders }
-           });
-         }
-         
-         // Convert audio data to Uint8Array
-         let audioUint8;
-         if (Array.isArray(data)) {
-           audioUint8 = new Uint8Array(data);
-         } else if (typeof data === 'object' && data !== null) {
-           if (data.type === 'Buffer' && Array.isArray(data.data)) {
-             audioUint8 = new Uint8Array(data.data);
-           } else {
-             audioUint8 = new Uint8Array(Object.values(data));
-           }
-         } else {
-           return new Response(JSON.stringify({ error: 'Invalid audio data format' }), {
-             status: 400,
-             headers: { 'Content-Type': 'application/json', ...corsHeaders }
-           });
-         }
-         
-         // Create binary chunk for audio
-         const audioChunk = createBinaryChunk(
-           audioUint8,
-           mimeType,
-           'com.rxcafe.user',
-           {
-             'chat.role': 'user',
-             'audio.duration': duration,
-             'client.type': 'web',
-             'admin.authorized': verifyAdmin(request).isAdmin
-           }
-         );
-         
-         // Send audio chunk to session input stream
-         session.inputStream.next(audioChunk);
-         
-         // Return success response
-         return new Response(JSON.stringify({
-           success: true,
-           chunk: audioChunk
-         }), {
-           headers: { 'Content-Type': 'application/json', ...corsHeaders }
-         });
-       }
-       
-       // Handle text messages
-       const message = body.message;
-       if (!message || typeof message !== 'string') {
-         return new Response(JSON.stringify({ error: 'Message or audio required' }), {
-           status: 400,
-           headers: { 'Content-Type': 'application/json', ...corsHeaders }
-         });
-       }
-       
-       const { isAdmin } = verifyAdmin(request);
-       const response = await handleChatStream(sessionId, message, isAdmin);
-       return addCors(response, corsHeaders);
-     }
-    
-    if (pathname.match(/^\/api\/chat\/[^/]+\/abort$/) && request.method === 'POST') {
-      const sessionId = pathname.split('/')[3];
-      const response = await handleAbort(sessionId);
-      return addCors(response, corsHeaders);
-    }
-
-    // Connected Agents API
-    if (pathname === '/api/connected-agents' && request.method === 'POST') {
-      const body = await request.json().catch(() => ({}));
-      const response = handleRegisterConnectedAgent(body);
-      return addCors(response, corsHeaders);
-    }
-    
-    // System agent routes (admin-only)
-    if (pathname === '/api/system/command' && request.method === 'POST') {
-      const { isAdmin, token } = verifyAdmin(request);
-      if (!isAdmin) {
-        return addCors(createForbiddenResponse(), corsHeaders);
-      }
-      const response = await handleSystemCommand(request);
-      return addCors(response, corsHeaders);
-    }
-    
-    // 404
-    return new Response(JSON.stringify({ error: 'Not found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-});
-
-function addCors(response: Response, corsHeaders: Record<string, string>): Response {
-  for (const [key, value] of Object.entries(corsHeaders)) {
-    response.headers.set(key, value);
-  }
-  return response;
-}
-
-// Connected Agents API Handlers
 
 function handleRegisterConnectedAgent(body: { name?: string; description?: string }): Response {
   const name = body.name || 'Unnamed Agent';
@@ -2776,9 +1101,436 @@ async function handleSystemCommand(request: Request): Promise<Response> {
   });
 }
 
+function addCors(response: Response, corsHeaders: Record<string, string>): Response {
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
+const server = serve({
+  port: PORT,
+  idleTimeout: 255,
+  async fetch(request) {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    };
+    
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
+    
+    if (pathname === '/' || pathname === '/index.html') {
+      return new Response(getFrontendHtml(webToken), {
+        headers: { 'Content-Type': 'text/html', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/app.js') {
+      return new Response(getFrontendJs(), {
+        headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/styles.css') {
+      return new Response(getFrontendCss(), {
+        headers: { 'Content-Type': 'text/css', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/manifest.json') {
+      return new Response(getManifest(), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/sw.js') {
+      return new Response(getServiceWorker(), {
+        headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/widgets/styles.css') {
+      return new Response(getWidgetCss(), {
+        headers: { 'Content-Type': 'text/css', ...corsHeaders }
+      });
+    }
+    
+    if (pathname.startsWith('/widgets/')) {
+      const filename = pathname.slice(9);
+      const content = getWidgetFile(filename);
+      if (content !== null) {
+        const contentType = filename.endsWith('.js') ? 'application/javascript' : 
+                           filename.endsWith('.css') ? 'text/css' : 'text/plain';
+        return new Response(content, {
+          headers: { 'Content-Type': contentType, ...corsHeaders }
+        });
+      }
+    }
+    
+    if (pathname.startsWith('/js/')) {
+      const filename = pathname.slice(4);
+      const content = getJsFile(filename);
+      if (content !== null) {
+        return new Response(content, {
+          headers: { 'Content-Type': 'application/javascript', ...corsHeaders }
+        });
+      }
+    }
+    
+    if (pathname === '/icon.svg') {
+      return new Response(getIconSvg(), {
+        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/icon-192.png') {
+      const icon = getIcon(192);
+      if (icon) {
+        return new Response(icon, {
+          headers: { 'Content-Type': 'image/png', ...corsHeaders }
+        });
+      }
+      return new Response(getIconSvg(), {
+        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/icon-512.png') {
+      const icon = getIcon(512);
+      if (icon) {
+        return new Response(icon, {
+          headers: { 'Content-Type': 'image/png', ...corsHeaders }
+        });
+      }
+      return new Response(getIconSvg(), {
+        headers: { 'Content-Type': 'image/svg+xml', ...corsHeaders }
+      });
+    }
+    
+    if (pathname === '/api/health') {
+      return new Response(JSON.stringify({ 
+        status: 'ok',
+        timestamp: Date.now(),
+        backend: config.backend,
+        koboldUrl: config.koboldBaseUrl,
+        ollamaUrl: config.ollamaBaseUrl,
+        ollamaModel: config.ollamaModel,
+        authRequired: true,
+        trustedClients: trustDb.getClientCount()
+      }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+    
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+$/) && request.method === 'DELETE') {
+      const agentId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleUnregisterConnectedAgent(agentId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/sessions$/) && request.method === 'GET') {
+      const agentId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleGetAgentSessions(agentId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentSubscribe(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/subscribe\/[^/]+$/) && request.method === 'DELETE') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentUnsubscribe(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentJoin(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/connected-agents\/[^/]+\/join\/[^/]+$/) && request.method === 'DELETE') {
+      const parts = pathname.split('/');
+      const agentId = parts[3];
+      const sessionId = parts[5];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      if (authResult.agent.id !== agentId) {
+        return addCors(new Response(JSON.stringify({ error: 'Agent ID mismatch' }), { status: 403, headers: { 'Content-Type': 'application/json' } }), corsHeaders);
+      }
+      const response = handleAgentLeave(agentId, sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/connected-agents$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const authResult = verifyAgentAuth(request);
+      if ('error' in authResult) return addCors(authResult.error, corsHeaders);
+      const response = handleGetSessionConnectedAgents(sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/stream\/agent$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = handleAgentSessionStream(request, sessionId);
+      return response;
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+\/agent-chunk$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleAgentProduceChunk(request, sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    const { trusted, token } = verifyClient(request);
+    if (!trusted) {
+      return addCors(createUntrustedResponse(token), corsHeaders);
+    }
+    
+    if (pathname === '/webhook/telegram' && request.method === 'POST') {
+      const telegramBot = getTelegramBot();
+      if (!telegramBot) {
+        return new Response(JSON.stringify({ error: 'Telegram bot not configured' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const update = await request.json();
+      await telegramBot.handleUpdate(update);
+      
+      return new Response('OK', { status: 200 });
+    }
+    
+    if (pathname === '/api/agents' && request.method === 'GET') {
+      const response = await handleListAgents();
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname === '/api/sessions' && request.method === 'GET') {
+      const response = await handleListSessions();
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname === '/api/session' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const response = await handleCreateSession(body);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleDeleteSession(sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname === '/api/models' && request.method === 'GET') {
+      const backend = url.searchParams.get('backend') || undefined;
+      const response = await handleListModels(backend);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/history$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleGetHistory(sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/stream$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = handleSessionStream(sessionId);
+      return response;
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/errors$/) && request.method === 'GET') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleErrorStream(sessionId);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/web$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json();
+      const urlToFetch = body.url;
+      
+      if (!urlToFetch) {
+        return new Response(JSON.stringify({ error: 'URL required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      
+      const response = await handleFetchWeb(sessionId, urlToFetch);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/chunk$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json();
+      
+      const response = await handleAddChunk(sessionId, {
+        content: body.content,
+        contentType: body.contentType,
+        producer: body.producer,
+        annotations: body.annotations,
+        emit: body.emit === true
+      });
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/session\/[^/]+\/chunk\/[^/]+\/trust$/) && request.method === 'POST') {
+      const parts = pathname.split('/');
+      const sessionId = parts[3];
+      const chunkId = parts[5];
+      const body = await request.json();
+      const trusted = body.trusted === true;
+      
+      const response = await handleToggleTrust(sessionId, chunkId, trusted);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/chat\/[^/]+$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json();
+      
+      if (body.audio) {
+        const session = getSession(sessionId);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Session not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+        
+        const { data, mimeType, duration } = body.audio;
+        if (!data || !mimeType) {
+          return new Response(JSON.stringify({ error: 'Audio data and MIME type required' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+        
+        let audioUint8;
+        if (Array.isArray(data)) {
+          audioUint8 = new Uint8Array(data);
+        } else if (typeof data === 'object' && data !== null) {
+          if (data.type === 'Buffer' && Array.isArray(data.data)) {
+            audioUint8 = new Uint8Array(data.data);
+          } else {
+            audioUint8 = new Uint8Array(Object.values(data));
+          }
+        } else {
+          return new Response(JSON.stringify({ error: 'Invalid audio data format' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders }
+          });
+        }
+        
+        const audioChunk = createBinaryChunk(
+          audioUint8,
+          mimeType,
+          'com.rxcafe.user',
+          {
+            'chat.role': 'user',
+            'audio.duration': duration,
+            'client.type': 'web',
+            'admin.authorized': verifyAdmin(request).isAdmin
+          }
+        );
+        
+        session.inputStream.next(audioChunk);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          chunk: audioChunk
+        }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      
+      const message = body.message;
+      if (!message || typeof message !== 'string') {
+        return new Response(JSON.stringify({ error: 'Message or audio required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders }
+        });
+      }
+      
+      const { isAdmin } = verifyAdmin(request);
+      const response = await handleChatStream(sessionId, message, isAdmin);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname.match(/^\/api\/chat\/[^/]+\/abort$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const response = await handleAbort(sessionId);
+      return addCors(response, corsHeaders);
+    }
+
+    if (pathname === '/api/connected-agents' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const response = handleRegisterConnectedAgent(body);
+      return addCors(response, corsHeaders);
+    }
+    
+    if (pathname === '/api/system/command' && request.method === 'POST') {
+      const { isAdmin, token } = verifyAdmin(request);
+      if (!isAdmin) {
+        return addCors(createForbiddenResponse(), corsHeaders);
+      }
+      const response = await handleSystemCommand(request);
+      return addCors(response, corsHeaders);
+    }
+    
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+});
+
 console.log(`Server running at http://localhost:${PORT}?token=${webToken}`);
 
-// Load agents and start background agents
 (async () => {
   console.log('[Server] Loading agents...');
   await loadAgentsFromDisk();
@@ -2795,23 +1547,15 @@ console.log(`Server running at http://localhost:${PORT}?token=${webToken}`);
   console.log('[Server] Starting background agents...');
   await startBackgroundAgents(config);
   
-  // Initialize Telegram bot (if configured)
-  initTelegramBot().then(() => {
-    // Restore persistent Telegram auto-subscriptions
-    if (telegramBot) {
-      console.log('[Telegram] Restoring persistent auto-subscriptions...');
-      const allSubs = trustDb.listAllTelegramSubscriptions();
-      for (const sub of allSubs) {
-        const session = getSession(sub.sessionId);
-        if (session) {
-          ensureTelegramSubscription(sub.chatId, session);
-        }
-      }
-    }
-  }).catch(console.error);
+  await initTelegramHandler({
+    trustDb,
+    sessionStore,
+    config
+  });
+  
+  await restoreTelegramSubscriptions();
 })();
 
-// Cleanup on exit
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
   shutdown();
