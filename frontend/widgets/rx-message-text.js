@@ -129,6 +129,32 @@ export class RxMessageText extends LitElement {
       text-align: right;
       opacity: 0.8;
     }
+
+    .message-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+
+    .message-body table th,
+    .message-body table td {
+      border: 1px solid var(--table-border-color, #d1d5db);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+
+    .message-body table th {
+      font-weight: 600;
+    }
+
+    .message-body table tr:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .message-body thead {
+      border-bottom: 2px solid var(--table-border-color, #d1d5db);
+    }
   `;
 
   constructor() {

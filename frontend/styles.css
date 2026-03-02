@@ -644,33 +644,6 @@ body {
 .slash-commands code { background-color: var(--surface-color); padding: 0.2rem 0.4rem; border-radius: 0.25rem; color: var(--primary-color); font-family: monospace; }
 .footer { background-color: var(--surface-color); border-top: 1px solid var(--border-color); padding: 0.5rem 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-secondary); }
 
-/* Markdown Tables */
-.message-body table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 0.5rem 0;
-    font-size: 0.9rem;
-}
-
-.message-body table th,
-.message-body table td {
-    border: 1px solid var(--table-border-color);
-    padding: 0.5rem 0.75rem;
-    text-align: left;
-}
-
-.message-body table th {
-    font-weight: 600;
-}
-
-.message-body table tr:hover {
-    background-color: var(--focus-ring);
-}
-
-.message-body thead {
-    border-bottom: 2px solid var(--table-border-color);
-}
-
 /* Code blocks in markdown */
 .message-body pre {
     background-color: var(--bg-color);
