@@ -19,8 +19,10 @@ import './afe-fieldset.js';
 export class AfeWizard extends LitElement {
   static properties = {
     agents: { type: Array },
+    presets: { type: Array },
     currentStep: { type: Number },
     selectedAgent: { type: Object },
+    selectedPreset: { type: Object },
     formData: { type: Object },
     models: { type: Array },
     loadingModels: { type: Boolean },
@@ -346,8 +348,10 @@ export class AfeWizard extends LitElement {
   constructor() {
     super();
     this.agents = [];
+    this.presets = [];
     this.currentStep = 1;
     this.selectedAgent = null;
+    this.selectedPreset = null;
     this.formData = {};
     this.models = [];
     this.loadingModels = false;
@@ -358,6 +362,7 @@ export class AfeWizard extends LitElement {
   reset() {
     this.currentStep = 1;
     this.selectedAgent = null;
+    this.selectedPreset = null;
     this.formData = {};
     this.models = [];
     this.loadingModels = false;
@@ -508,6 +513,7 @@ export class AfeWizard extends LitElement {
   _handleAgentSelect(agent) {
     console.log('[WIZARD] _handleAgentSelect called for:', agent?.name);
     this.selectedAgent = agent;
+    this.selectedPreset = null;
     
     // Initialize formData with defaults from schema
     const schema = agent.configSchema;
@@ -538,6 +544,45 @@ export class AfeWizard extends LitElement {
     }
     
     this.formData = formData;
+  }
+
+  _handlePresetSelect(preset) {
+    console.log('[WIZARD] _handlePresetSelect called for:', preset?.name);
+    this.selectedPreset = preset;
+    
+    if (!preset) {
+      // If no preset selected, reset to agent selection
+      this.selectedAgent = null;
+      this.formData = {};
+      return;
+    }
+    
+    // Find the agent for this preset
+    const agent = this.agents.find(a => a.name === preset.agentId);
+    if (!agent) {
+      this.error = `Agent '${preset.agentId}' from preset not found`;
+      return;
+    }
+    
+    this.selectedAgent = agent;
+    
+    // Apply preset config to formData
+    let formData = {};
+    if (preset.backend) formData.backend = preset.backend;
+    if (preset.model) formData.model = preset.model;
+    if (preset.systemPrompt) formData.systemPrompt = preset.systemPrompt;
+    if (preset.llmParams) formData.llmParams = preset.llmParams;
+    
+    // Load models if ollama backend
+    if (preset.backend === 'ollama') {
+      this._loadOllamaModels();
+    }
+    
+    this.formData = formData;
+    this.error = '';
+    
+    // Auto-advance to step 3 (review) if we have preset data
+    this.currentStep = 3;
   }
 
   async _loadOllamaModels() {
@@ -673,12 +718,75 @@ export class AfeWizard extends LitElement {
     }));
   }
 
+  _getToken() {
+    return window.RXCAFE_TOKEN || new URLSearchParams(window.location.search).get('token');
+  }
+
+  async _saveAsPreset() {
+    const name = prompt('Enter a name for this preset:');
+    if (!name || !name.trim()) return;
+    
+    const description = prompt('Enter a description (optional):') || undefined;
+    
+    const token = this._getToken();
+    const url = new URL('/api/presets', this.apiUrl);
+    if (token) url.searchParams.set('token', token);
+    
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          agentId: this.selectedAgent.name,
+          backend: this.formData.backend,
+          model: this.formData.model,
+          systemPrompt: this.formData.systemPrompt,
+          llmParams: this.formData.llmParams,
+          description
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Preset '${name}' created successfully!`);
+        // Reload presets
+        this.dispatchEvent(new CustomEvent('afe-wizard-preset-created', {
+          bubbles: true,
+          composed: true
+        }));
+      } else {
+        alert('Failed to create preset: ' + (data.error || data.message));
+      }
+    } catch (err) {
+      alert('Failed to create preset: ' + err.message);
+    }
+  }
+
   _renderStep1() {
     return html`
       <h3>Select an Agent</h3>
       <p style="color: var(--afe-color-text-muted, #6b7280); margin-bottom: 1rem;">
         Choose which agent to use for this session.
       </p>
+      
+      ${this.presets && this.presets.length > 0 ? html`
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--afe-color-background-subtle, #f9fafb); border-radius: 0.5rem;">
+          <h4 style="margin: 0 0 0.75rem 0; font-size: 0.875rem; color: var(--afe-color-text-muted, #6b7280);">Or select a preset</h4>
+          <afe-select
+            name="preset"
+            label=""
+            required="false"
+            .options=${[{ value: '', label: 'Choose a preset (optional)' }, ...this.presets.map(p => ({ value: p.name, label: p.name + (p.description ? ` - ${p.description}` : '') }))]}
+            .value=${this.selectedPreset?.name || ''}
+            @afe-change=${(e) => {
+              const preset = this.presets.find(p => p.name === e.detail.value);
+              this._handlePresetSelect(preset);
+            }}
+          ></afe-select>
+        </div>
+      ` : ''}
       
       ${this.agents.map(agent => html`
         <label class="agent-option ${this.selectedAgent?.name === agent.name ? 'selected' : ''}">
@@ -855,6 +963,12 @@ export class AfeWizard extends LitElement {
             <span class="afe-review-value">${typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
           </div>
         `)}
+      </div>
+      
+      <div style="margin-top: 1rem;">
+        <button class="afe-btn afe-btn-secondary" style="width: 100%;" @click=${this._saveAsPreset}>
+          Save as Preset
+        </button>
       </div>
     `;
   }

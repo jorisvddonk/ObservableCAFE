@@ -1,6 +1,6 @@
-import type { CoreConfig, AddChunkOptions } from '../core.js';
-import type { Database } from '../database.js';
-import type { SessionStore } from '../session-store.js';
+import type { CoreConfig, AddChunkOptions } from '../../core.js';
+import type { Database } from '../../database.js';
+import type { SessionStore } from '../../session-store.js';
 
 let config: CoreConfig;
 let trustDb: Database;
@@ -13,6 +13,7 @@ export function initApiHandlers(deps: { config: CoreConfig; trustDb: Database; s
   
   import('./session.js').then(m => m.init({ config, sessionStore }));
   import('./chat.js').then(m => m.init({ config }));
+  import('./presets.js').then(m => m.init({ config, trustDb }));
   // connected-agents and streams don't need init
 }
 
@@ -31,3 +32,4 @@ export {
   handleAgentProduceChunk 
 } from './connected-agents.js';
 export { handleSessionStream, handleErrorStream, handleSystemCommand } from './streams.js';
+export { handleListPresets, handleCreatePreset, handleGetPreset, handleUpdatePreset, handleDeletePreset, handleCreateSessionFromPreset } from './presets.js';

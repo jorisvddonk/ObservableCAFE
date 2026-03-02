@@ -398,15 +398,40 @@ export class UIManager {
         
         await this.chat.sessionsManager.loadAgents();
         
+        // Load presets
+        let presets = [];
+        try {
+            const url = new URL('/api/presets', window.location.origin);
+            if (this.chat.token) url.searchParams.set('token', this.chat.token);
+            const response = await fetch(url.toString());
+            const data = await response.json();
+            presets = data.presets || [];
+        } catch (err) {
+            console.error('Failed to load presets:', err);
+        }
+        
         if (this.chat.sessionWizard.reset) {
             this.chat.sessionWizard.reset();
         }
         
         this.chat.sessionWizard.agents = this.chat.agents;
-        this.chat.sessionWizard.apiUrl = this.chat.apiUrl('');
+        this.chat.sessionWizard.presets = presets;
+        this.chat.sessionWizard.apiUrl = window.location.origin;
         
         this.chat.sessionWizard.addEventListener('afe-wizard-complete', (e) => this.handleWizardComplete(e));
         this.chat.sessionWizard.addEventListener('afe-wizard-close', () => this.hideWizardModal());
+        this.chat.sessionWizard.addEventListener('afe-wizard-preset-created', async () => {
+            // Reload presets
+            try {
+                const url = new URL('/api/presets', window.location.origin);
+                if (this.chat.token) url.searchParams.set('token', this.chat.token);
+                const response = await fetch(url.toString());
+                const data = await response.json();
+                this.chat.sessionWizard.presets = data.presets || [];
+            } catch (err) {
+                console.error('Failed to reload presets:', err);
+            }
+        });
     }
 
     hideWizardModal() {

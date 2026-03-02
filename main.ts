@@ -319,6 +319,26 @@ const server = serve({
     }
     
     // API routes
+    // Agent presets
+    if (pathname === '/api/presets' && request.method === 'GET') return addCors(await api.handleListPresets(), corsHeaders);
+    if (pathname === '/api/presets' && request.method === 'POST') return addCors(api.handleCreatePreset(await request.json().catch(() => ({}))), corsHeaders);
+    if (pathname.match(/^\/api\/presets\/[^/]+$/) && request.method === 'GET') {
+      const presetName = decodeURIComponent(pathname.split('/')[3]);
+      return addCors(api.handleGetPreset(presetName), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/presets\/[^/]+$/) && request.method === 'PUT') {
+      const presetName = decodeURIComponent(pathname.split('/')[3]);
+      return addCors(api.handleUpdatePreset(presetName, await request.json().catch(() => ({}))), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/presets\/[^/]+$/) && request.method === 'DELETE') {
+      const presetName = decodeURIComponent(pathname.split('/')[3]);
+      return addCors(api.handleDeletePreset(presetName), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/presets\/[^/]+\/create-session$/) && request.method === 'POST') {
+      const presetName = decodeURIComponent(pathname.split('/')[3]);
+      return addCors(await api.handleCreateSessionFromPreset(presetName), corsHeaders);
+    }
+    
     if (pathname === '/api/agents' && request.method === 'GET') return addCors(await api.handleListAgents(), corsHeaders);
     if (pathname === '/api/sessions' && request.method === 'GET') return addCors(await api.handleListSessions(), corsHeaders);
     if (pathname === '/api/session' && request.method === 'POST') return addCors(await api.handleCreateSession(await request.json().catch(() => ({}))), corsHeaders);

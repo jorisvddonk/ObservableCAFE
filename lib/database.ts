@@ -132,6 +132,25 @@ export class Database {
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_connected_agent_sessions_session ON connected_agent_sessions(session_id)
     `);
+
+    // Create agent_presets table
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS agent_presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        agent_id TEXT NOT NULL,
+        backend TEXT,
+        model TEXT,
+        system_prompt TEXT,
+        llm_params TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `);
+
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_agent_presets_name ON agent_presets(name)
+    `);
   }
 
   /**
@@ -755,6 +774,174 @@ export class Database {
     const result = stmt.get(agentId, sessionId);
     stmt.finalize();
     return !!result;
+  }
+
+  // =============================================================================
+  // Agent Presets Methods
+  // =============================================================================
+
+  /**
+   * Add a new agent preset
+   */
+  addAgentPreset(
+    name: string,
+    agentId: string,
+    backend?: string,
+    model?: string,
+    systemPrompt?: string,
+    llmParams?: Record<string, any>,
+    description?: string
+  ): void {
+    const now = Date.now();
+    const llmParamsJson = llmParams ? JSON.stringify(llmParams) : null;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_presets (name, description, agent_id, backend, model, system_prompt, llm_params, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(name, description || null, agentId, backend || null, model || null, systemPrompt || null, llmParamsJson, now);
+    stmt.finalize();
+  }
+
+  /**
+   * Update an existing agent preset
+   */
+  updateAgentPreset(
+    id: number,
+    updates: {
+      name?: string;
+      description?: string;
+      agentId?: string;
+      backend?: string;
+      model?: string;
+      systemPrompt?: string;
+      llmParams?: Record<string, any>;
+    }
+  ): boolean {
+    const preset = this.getAgentPresetById(id);
+    if (!preset) return false;
+
+    const name = updates.name ?? preset.name;
+    const description = updates.description ?? preset.description;
+    const agentId = updates.agentId ?? preset.agentId;
+    const backend = updates.backend ?? preset.backend;
+    const model = updates.model ?? preset.model;
+    const systemPrompt = updates.systemPrompt ?? preset.systemPrompt;
+    const llmParamsJson = updates.llmParams ? JSON.stringify(updates.llmParams) : (preset.llmParams ? JSON.stringify(preset.llmParams) : null);
+
+    const stmt = this.db.prepare(`
+      UPDATE agent_presets 
+      SET name = ?, description = ?, agent_id = ?, backend = ?, model = ?, system_prompt = ?, llm_params = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(name, description, agentId, backend, model, systemPrompt, llmParamsJson, id);
+    stmt.finalize();
+    return result.changes > 0;
+  }
+
+  /**
+   * Get preset by ID
+   */
+  getAgentPresetById(id: number): {
+    id: number;
+    name: string;
+    description: string | null;
+    agentId: string;
+    backend: string | null;
+    model: string | null;
+    systemPrompt: string | null;
+    llmParams: Record<string, any> | null;
+    createdAt: number;
+  } | undefined {
+    const stmt = this.db.prepare(`
+      SELECT id, name, description, agent_id as agentId, backend, model, system_prompt as systemPrompt, llm_params as llmParams, created_at as createdAt
+      FROM agent_presets WHERE id = ?
+    `);
+    const result = stmt.get(id) as any;
+    stmt.finalize();
+    if (result && result.llmParams) {
+      result.llmParams = JSON.parse(result.llmParams);
+    }
+    return result;
+  }
+
+  /**
+   * Get preset by name
+   */
+  getAgentPresetByName(name: string): {
+    id: number;
+    name: string;
+    description: string | null;
+    agentId: string;
+    backend: string | null;
+    model: string | null;
+    systemPrompt: string | null;
+    llmParams: Record<string, any> | null;
+    createdAt: number;
+  } | undefined {
+    const stmt = this.db.prepare(`
+      SELECT id, name, description, agent_id as agentId, backend, model, system_prompt as systemPrompt, llm_params as llmParams, created_at as createdAt
+      FROM agent_presets WHERE name = ?
+    `);
+    const result = stmt.get(name) as any;
+    stmt.finalize();
+    if (result && result.llmParams) {
+      result.llmParams = JSON.parse(result.llmParams);
+    }
+    return result;
+  }
+
+  /**
+   * List all agent presets
+   */
+  listAgentPresets(): Array<{
+    id: number;
+    name: string;
+    description: string | null;
+    agentId: string;
+    backend: string | null;
+    model: string | null;
+    systemPrompt: string | null;
+    llmParams: Record<string, any> | null;
+    createdAt: number;
+  }> {
+    const stmt = this.db.prepare(`
+      SELECT id, name, description, agent_id as agentId, backend, model, system_prompt as systemPrompt, llm_params as llmParams, created_at as createdAt
+      FROM agent_presets
+      ORDER BY created_at DESC
+    `);
+    const results = stmt.all() as any[];
+    stmt.finalize();
+    return results.map(r => {
+      if (r.llmParams) {
+        r.llmParams = JSON.parse(r.llmParams);
+      }
+      return r;
+    });
+  }
+
+  /**
+   * Delete an agent preset
+   */
+  deleteAgentPreset(id: number): boolean {
+    const stmt = this.db.prepare(`
+      DELETE FROM agent_presets WHERE id = ?
+    `);
+    const result = stmt.run(id);
+    stmt.finalize();
+    return result.changes > 0;
+  }
+
+  /**
+   * Delete an agent preset by name
+   */
+  deleteAgentPresetByName(name: string): boolean {
+    const stmt = this.db.prepare(`
+      DELETE FROM agent_presets WHERE name = ?
+    `);
+    const result = stmt.run(name);
+    stmt.finalize();
+    return result.changes > 0;
   }
 
   close(): void {

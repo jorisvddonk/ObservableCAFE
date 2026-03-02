@@ -25,6 +25,11 @@ Telegram Users:
   bun start -- --untrust-telegram <id|username>       Untrust Telegram user
   bun start -- --list-telegram-users                   List trusted Telegram users
 
+Agent Presets:
+  bun start -- --create-preset <name> --agent <agentId> [--backend ollama|kobold] [--model <model>] [--system-prompt <prompt>] [--description <desc>]
+  bun start -- --list-presets                          List all presets
+  bun start -- --delete-preset <name>                  Delete a preset
+
 Environment Variables:
   PORT                       Server port (default: 3000)
   TELEGRAM_TOKEN             Telegram bot token
@@ -283,6 +288,118 @@ function handleListTelegramUsers(args: string[]): CliHandlerResult {
   process.exit(0);
 }
 
+function handlePresetCreate(args: string[]): CliHandlerResult {
+  const createIndex = args.indexOf('--create-preset');
+  if (createIndex === -1 || !args[createIndex + 1]) {
+    return { handled: false };
+  }
+
+  const name = args[createIndex + 1];
+  
+  let agentId = 'default';
+  let backend: string | undefined;
+  let model: string | undefined;
+  let systemPrompt: string | undefined;
+  let description: string | undefined;
+  
+  const agentIndex = args.indexOf('--agent');
+  if (agentIndex !== -1 && args[agentIndex + 1] && !args[agentIndex + 1]?.startsWith('--')) {
+    agentId = args[agentIndex + 1];
+  }
+  
+  const backendIndex = args.indexOf('--backend');
+  if (backendIndex !== -1 && args[backendIndex + 1] && !args[backendIndex + 1]?.startsWith('--')) {
+    backend = args[backendIndex + 1];
+  }
+  
+  const modelIndex = args.indexOf('--model');
+  if (modelIndex !== -1 && args[modelIndex + 1] && !args[modelIndex + 1]?.startsWith('--')) {
+    model = args[modelIndex + 1];
+  }
+  
+  const promptIndex = args.indexOf('--system-prompt');
+  if (promptIndex !== -1 && args[promptIndex + 1] && !args[promptIndex + 1]?.startsWith('--')) {
+    systemPrompt = args[promptIndex + 1];
+  }
+  
+  const descIndex = args.indexOf('--description');
+  if (descIndex !== -1 && args[descIndex + 1] && !args[descIndex + 1]?.startsWith('--')) {
+    description = args[descIndex + 1];
+  }
+  
+  const db = new Database();
+  
+  if (db.getAgentPresetByName(name)) {
+    console.log(`❌ Preset '${name}' already exists`);
+    db.close();
+    process.exit(1);
+  }
+  
+  db.addAgentPreset(name, agentId, backend, model, systemPrompt, undefined, description);
+  
+  console.log(`✓ Created preset '${name}'`);
+  console.log(`  Agent: ${agentId}`);
+  if (backend) console.log(`  Backend: ${backend}`);
+  if (model) console.log(`  Model: ${model}`);
+  
+  db.close();
+  process.exit(0);
+}
+
+function handlePresetList(args: string[]): CliHandlerResult {
+  if (!args.includes('--list-presets')) {
+    return { handled: false };
+  }
+
+  const db = new Database();
+  const presets = db.listAgentPresets();
+
+  if (presets.length === 0) {
+    console.log('No presets found.');
+    console.log('To create a preset: bun start -- --create-preset <name> --agent <agentId> [--backend ollama] [--model gemma3:1b]');
+  } else {
+    console.log(`Presets (${presets.length}):`);
+    console.log('');
+    console.log('ID  | Name              | Agent   | Backend  | Model        | Description');
+    console.log('----|-------------------|---------|----------|--------------|------------');
+
+    for (const preset of presets) {
+      const id = preset.id.toString().padStart(3);
+      const name = preset.name.padEnd(17);
+      const agentId = (preset.agentId || 'N/A').padEnd(9);
+      const backend = (preset.backend || '-').padEnd(8);
+      const model = (preset.model || '-').padEnd(12);
+      const desc = (preset.description || '').slice(0, 20);
+      
+      console.log(`${id} | ${name} | ${agentId} | ${backend} | ${model} | ${desc}`);
+    }
+  }
+
+  db.close();
+  process.exit(0);
+}
+
+function handlePresetDelete(args: string[]): CliHandlerResult {
+  const deleteIndex = args.indexOf('--delete-preset');
+  if (deleteIndex === -1 || !args[deleteIndex + 1]) {
+    return { handled: false };
+  }
+
+  const name = args[deleteIndex + 1];
+  const db = new Database();
+  
+  if (!db.deleteAgentPresetByName(name)) {
+    console.log(`❌ Preset '${name}' not found`);
+    db.close();
+    process.exit(1);
+  }
+  
+  console.log(`✓ Deleted preset '${name}'`);
+  
+  db.close();
+  process.exit(0);
+}
+
 export function handleCliCommands(args: string[]): void {
   if (args.includes('--help') || args.includes('-h')) {
     handleHelp();
@@ -296,4 +413,7 @@ export function handleCliCommands(args: string[]): void {
   handleTrustTelegram(args);
   handleUntrustTelegram(args);
   handleListTelegramUsers(args);
+  handlePresetCreate(args);
+  handlePresetList(args);
+  handlePresetDelete(args);
 }
