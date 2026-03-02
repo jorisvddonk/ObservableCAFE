@@ -518,4 +518,18 @@ export class TelegramBot {
       ]]
     };
   }
+
+  createQuickResponsesKeyboard(responses: string[], prefix: string = 'qr'): any {
+    const buttons = responses.map((response, index) => ({
+      text: response,
+      callback_data: `${prefix}:${index}:${response}`
+    }));
+
+    const rows: any[][] = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+      rows.push(buttons.slice(i, i + 2));
+    }
+
+    return { inline_keyboard: rows };
+  }
 }

@@ -8,6 +8,9 @@ import { RxMessageWeb } from '../widgets/rx-message-web.js';
 import { RxMessageTool } from '../widgets/rx-message-tool.js';
 import { RxMessageSystem } from '../widgets/rx-message-system.js';
 import { RxMessageVisualization } from '../widgets/rx-message-visualization.js';
+import { RxMessageCode } from '../widgets/rx-message-code.js';
+import { RxMessageDiff } from '../widgets/rx-message-diff.js';
+import { RxQuickResponses } from '../widgets/rx-quick-responses.js';
 
 export class MessagesManager {
     constructor(chat) {
@@ -20,6 +23,8 @@ export class MessagesManager {
         const isSystem = role === 'system';
         const isTelegram = chunk.annotations?.['client.type'] === 'telegram';
         const isVisualization = chunk.annotations?.['visualizer.type'] === 'rx-marbles';
+        const isCode = chunk.annotations?.['code.language'];
+        const isDiff = chunk.annotations?.['diff.type'];
         
         if (!role && chunk.annotations?.['session.name']) {
             this.chat.chunkElements.set(chunk.id, null);
@@ -28,6 +33,16 @@ export class MessagesManager {
         
         if (isVisualization) {
             this.addVisualizationMessage(chunk);
+            return;
+        }
+
+        if (isDiff) {
+            this.addDiffMessage(chunk);
+            return;
+        }
+
+        if (isCode) {
+            this.addCodeMessage(chunk);
             return;
         }
 
@@ -63,6 +78,8 @@ export class MessagesManager {
                 if (chunk.annotations && chunk.annotations['com.rxcafe.example.sentiment']) {
                     this.chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                 }
+
+                this.addQuickResponses(el, chunk);
             } else if (role === 'assistant') {
                 if (chunk.annotations?.['tool.name']) {
                     this.addToolCallMessage(chunk);
@@ -71,9 +88,55 @@ export class MessagesManager {
                     if (chunk.annotations?.['com.rxcafe.tool-detection']?.hasToolCalls) {
                         this.addToolCallIndicator(el, chunk.annotations['com.rxcafe.tool-detection'].toolCalls);
                     }
+                    this.addQuickResponses(el, chunk);
                 }
             }
         }
+    }
+
+    addCodeMessage(chunk) {
+        this.chat.addRawChunk(chunk);
+        
+        const codeEl = document.createElement('rx-message-code');
+        this.chat._elCounter++;
+        codeEl.dataset.elId = this.chat._elCounter;
+        codeEl.content = chunk.content || '';
+        codeEl.language = chunk.annotations?.['code.language'] || '';
+        codeEl.filename = chunk.annotations?.['code.filename'] || '';
+        codeEl.chunkId = chunk.id;
+        codeEl.role = chunk.annotations?.['chat.role'] || 'assistant';
+        
+        codeEl.addEventListener('code-contextmenu', (e) => {
+            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+        });
+        
+        this.chat.messagesEl.appendChild(codeEl);
+        this.chat.chunkElements.set(chunk.id, codeEl);
+        scrollToBottom(this.chat.messagesEl);
+    }
+
+    addDiffMessage(chunk) {
+        this.chat.addRawChunk(chunk);
+        
+        const diffEl = document.createElement('rx-message-diff');
+        this.chat._elCounter++;
+        diffEl.dataset.elId = this.chat._elCounter;
+        diffEl.oldContent = chunk.annotations?.['diff.oldContent'] || '';
+        diffEl.newContent = chunk.annotations?.['diff.newContent'] || chunk.content || '';
+        diffEl.oldFilename = chunk.annotations?.['diff.oldFilename'] || '';
+        diffEl.newFilename = chunk.annotations?.['diff.newFilename'] || '';
+        diffEl.language = chunk.annotations?.['diff.language'] || '';
+        diffEl.diffType = chunk.annotations?.['diff.type'] || 'unified';
+        diffEl.chunkId = chunk.id;
+        diffEl.role = chunk.annotations?.['chat.role'] || 'assistant';
+        
+        diffEl.addEventListener('diff-contextmenu', (e) => {
+            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+        });
+        
+        this.chat.messagesEl.appendChild(diffEl);
+        this.chat.chunkElements.set(chunk.id, diffEl);
+        scrollToBottom(this.chat.messagesEl);
     }
 
     addVisualizationMessage(chunk) {
@@ -273,6 +336,37 @@ export class MessagesManager {
         if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
             const annotations = messageEl.annotations || {};
             messageEl.annotations = { ...annotations, 'com.rxcafe.example.sentiment': sentiment };
+        }
+    }
+
+    addQuickResponses(messageEl, chunk) {
+        const quickResponses = chunk.annotations?.['com.rxcafe.quickResponses'];
+        if (!quickResponses || !Array.isArray(quickResponses) || quickResponses.length === 0) {
+            return;
+        }
+
+        const quickResponsesEl = document.createElement('rx-quick-responses');
+        quickResponsesEl.responses = quickResponses;
+        quickResponsesEl.disabled = !this.chat.sessionId || this.chat.isGenerating;
+        quickResponsesEl.id = 'quick-responses-' + chunk.id;
+
+        quickResponsesEl.addEventListener('quick-response', (e) => {
+            if (this.chat.messageInput) {
+                this.chat.messageInput.value = e.detail.response;
+                this.chat.messageInput.focus();
+            }
+        });
+
+        this.chat.messagesEl.appendChild(quickResponsesEl);
+        this.chat.scrollToBottom();
+    }
+
+    updateQuickResponsesState() {
+        const allQuickResponses = this.chat.messagesEl?.querySelectorAll('rx-quick-responses');
+        if (allQuickResponses) {
+            allQuickResponses.forEach(el => {
+                el.disabled = !this.chat.sessionId || this.chat.isGenerating;
+            });
         }
     }
 }

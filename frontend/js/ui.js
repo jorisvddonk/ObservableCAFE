@@ -143,6 +143,8 @@ export class UIManager {
         }
         this.chat.microphoneBtn.disabled = !this.chat.sessionId || this.chat.isGenerating;
         
+        this.chat.messagesManager?.updateQuickResponsesState();
+        
         if (this.chat.isRecording) {
             this.chat.microphoneBtn.textContent = '⏹️';
             this.chat.microphoneBtn.className = 'btn btn-danger';

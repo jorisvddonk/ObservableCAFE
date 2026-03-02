@@ -140,6 +140,19 @@ function setupCallbackHandlers() {
       const targetSessionId = data.split(':')[1];
       await telegramBot!.answerCallback(callbackId, '🔄 Switching...');
       await switchSession(chatId, targetSessionId);
+    } else if (data.startsWith('qr:')) {
+      const parts = data.split(':');
+      const response = parts.slice(2).join(':');
+
+      await telegramBot!.answerCallback(callbackId, `📝 ${response}`);
+
+      const sessionId = telegramState.currentSession.get(chatId);
+      if (!sessionId) return;
+
+      const session = getSession(sessionId);
+      if (!session) return;
+
+      await handleChatMessage(chatId, session, response);
     }
   });
 }
@@ -743,7 +756,14 @@ function ensureSubscription(chatId: number, session: Session) {
         } else if (isSystem) {
           await telegramBot.sendMessage(chatId, `⚙️ *System:* ${chunk.content}`, { parseMode: 'Markdown' });
         } else if (isAssistant) {
-          await telegramBot.sendMessage(chatId, chunk.content as string);
+          const quickResponses = chunk.annotations['com.rxcafe.quickResponses'];
+          if (quickResponses && Array.isArray(quickResponses) && quickResponses.length > 0) {
+            await telegramBot.sendMessage(chatId, chunk.content as string, {
+              replyMarkup: telegramBot.createQuickResponsesKeyboard(quickResponses)
+            });
+          } else {
+            await telegramBot.sendMessage(chatId, chunk.content as string);
+          }
         }
       }
     }
