@@ -23,6 +23,7 @@ export interface LLMParams {
 }
 
 export interface SessionConfig {
+  [key: string]: any;
 }
 
 export interface AgentDefinition {
