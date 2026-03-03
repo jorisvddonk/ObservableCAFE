@@ -92,7 +92,7 @@ class QuickiesManager {
         const start = this.gradientStart?.value || '#6366f1';
         const end = this.gradientEnd?.value || '#8b5cf6';
         
-        this.previewBtn.style.background = `linear-gradient(135deg, ${start}, ${end})`;
+        this.previewBtn.style.background = `linear-gradient(135deg in oklch, ${start}, ${end})`;
         this.previewBtn.innerHTML = `
             <span class="quickie-emoji">${emoji}</span>
             <span class="quickie-name">${name}</span>
@@ -170,7 +170,7 @@ class QuickiesManager {
         this.quickiesGrid.innerHTML = this.quickies.map(q => `
             <button class="quickie-btn" 
                     data-id="${q.id}" 
-                    style="background: linear-gradient(135deg, ${q.gradientStart}, ${q.gradientEnd})"
+                    style="background: linear-gradient(135deg in oklch, ${q.gradientStart}, ${q.gradientEnd})"
                     title="${q.description || q.name}">
                 <span class="quickie-emoji">${q.emoji}</span>
                 <span class="quickie-name">${q.name}</span>
@@ -226,7 +226,7 @@ class QuickiesManager {
 
         this.quickiesList.innerHTML = this.quickies.map(q => `
             <div class="quickie-list-item" data-id="${q.id}">
-                <div class="quickie-list-preview" style="background: linear-gradient(135deg, ${q.gradientStart}, ${q.gradientEnd})">
+                <div class="quickie-list-preview" style="background: linear-gradient(135deg in oklch, ${q.gradientStart}, ${q.gradientEnd})">
                     <span>${q.emoji}</span>
                 </div>
                 <div class="quickie-list-info">

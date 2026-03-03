@@ -4,7 +4,7 @@
   display: none;
   flex-direction: column;
   height: 100%;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(180deg in oklch, #1a1a2e 0%, #16213e 100%);
   color: #e0e0e0;
   padding: 0;
   overflow: hidden;
@@ -109,13 +109,13 @@
   transform: translateY(0);
 }
 
-.dice-btn.d4 { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); color: white; }
-.dice-btn.d6 { background: linear-gradient(135deg, #4ecdc4, #45b7aa); color: white; }
-.dice-btn.d8 { background: linear-gradient(135deg, #a55eea, #8854d0); color: white; }
-.dice-btn.d10 { background: linear-gradient(135deg, #ffb347, #e6a030); color: white; }
-.dice-btn.d12 { background: linear-gradient(135deg, #ff8a00, #e07800); color: white; }
-.dice-btn.d20 { background: linear-gradient(135deg, #667eea, #5568d6); color: white; }
-.dice-btn.d100 { background: linear-gradient(135deg, #764ba2, #654392); color: white; }
+.dice-btn.d4 { background: linear-gradient(135deg in oklch, #ff6b6b, #ee5a5a); color: white; }
+.dice-btn.d6 { background: linear-gradient(135deg in oklch, #4ecdc4, #45b7aa); color: white; }
+.dice-btn.d8 { background: linear-gradient(135deg in oklch, #a55eea, #8854d0); color: white; }
+.dice-btn.d10 { background: linear-gradient(135deg in oklch, #ffb347, #e6a030); color: white; }
+.dice-btn.d12 { background: linear-gradient(135deg in oklch, #ff8a00, #e07800); color: white; }
+.dice-btn.d20 { background: linear-gradient(135deg in oklch, #667eea, #5568d6); color: white; }
+.dice-btn.d100 { background: linear-gradient(135deg in oklch, #764ba2, #654392); color: white; }
 
 .modifier-buttons {
   display: flex;
@@ -134,12 +134,12 @@
 }
 
 .mod-btn.plus {
-  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  background: linear-gradient(135deg in oklch, #2ecc71, #27ae60);
   color: white;
 }
 
 .mod-btn.minus {
-  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  background: linear-gradient(135deg in oklch, #e74c3c, #c0392b);
   color: white;
 }
 
@@ -169,7 +169,7 @@
 
 .dice-roll-btn {
   padding: 14px 40px;
-  background: linear-gradient(135deg, #f093fb, #f5576c);
+  background: linear-gradient(135deg in oklch, #f093fb, #f5576c);
   border: none;
   border-radius: 12px;
   color: white;
@@ -268,7 +268,7 @@
 }
 
 .dice-result-card.critical {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(245, 87, 108, 0.2));
+  background: linear-gradient(135deg in oklch, rgba(102, 126, 234, 0.2), rgba(245, 87, 108, 0.2));
   border-color: rgba(102, 126, 234, 0.3);
 }
 
@@ -299,7 +299,7 @@
 }
 
 .dice-result-badge.critical {
-  background: linear-gradient(135deg, #f093fb, #f5576c);
+  background: linear-gradient(135deg in oklch, #f093fb, #f5576c);
   color: white;
 }
 
@@ -328,13 +328,13 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-.dice-face.d4 { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); }
-.dice-face.d6 { background: linear-gradient(135deg, #4ecdc4, #45b7aa); }
-.dice-face.d8 { background: linear-gradient(135deg, #a55eea, #8854d0); }
-.dice-face.d10 { background: linear-gradient(135deg, #ffb347, #e6a030); }
-.dice-face.d12 { background: linear-gradient(135deg, #ff8a00, #e07800); }
-.dice-face.d20 { background: linear-gradient(135deg, #667eea, #5568d6); }
-.dice-face.d100 { background: linear-gradient(135deg, #764ba2, #654392); }
+.dice-face.d4 { background: linear-gradient(135deg in oklch, #ff6b6b, #ee5a5a); }
+.dice-face.d6 { background: linear-gradient(135deg in oklch, #4ecdc4, #45b7aa); }
+.dice-face.d8 { background: linear-gradient(135deg in oklch, #a55eea, #8854d0); }
+.dice-face.d10 { background: linear-gradient(135deg in oklch, #ffb347, #e6a030); }
+.dice-face.d12 { background: linear-gradient(135deg in oklch, #ff8a00, #e07800); }
+.dice-face.d20 { background: linear-gradient(135deg in oklch, #667eea, #5568d6); }
+.dice-face.d100 { background: linear-gradient(135deg in oklch, #764ba2, #654392); }
 
 .dice-result-total {
   font-size: 1.5rem;
