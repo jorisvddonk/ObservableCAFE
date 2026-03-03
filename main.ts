@@ -53,7 +53,8 @@ import {
   getWidgetFile,
   getWidgetCss,
   getJsFile,
-  getDiceCss
+  getDiceCss,
+  getComponentFile
 } from './lib/frontend-server.js';
 import { 
   initTelegramHandler, 
@@ -233,7 +234,15 @@ const server = serve({
         return new Response(content, { headers: { 'Content-Type': 'application/javascript', ...corsHeaders } });
       }
     }
-    
+
+    if (pathname.startsWith('/components/')) {
+      const filename = pathname.slice(12);
+      const content = getComponentFile(filename);
+      if (content !== null) {
+        return new Response(content, { headers: { 'Content-Type': 'application/javascript', ...corsHeaders } });
+      }
+    }
+
     if (pathname === '/icon-192.png') {
       const icon = getIcon(192);
       return new Response(icon || getIconSvg(), { headers: { 'Content-Type': icon ? 'image/png' : 'image/svg+xml', ...corsHeaders } });

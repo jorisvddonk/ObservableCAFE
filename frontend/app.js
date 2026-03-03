@@ -6,6 +6,7 @@ import { RecordingManager } from './js/recording.js';
 import { MessagesManager } from './js/messages.js';
 import { SessionsManager } from './js/sessions.js';
 import { UIManager } from './js/ui.js';
+import { DiceUIAdapter } from './js/dice-ui.js';
 
 class RXCafeChat {
     constructor() {
@@ -27,7 +28,7 @@ class RXCafeChat {
         this.agents = [];
         this.knownSessions = [];
         this.uiMode = 'chat';
-        this.diceUIController = null;
+        this.customUIAdapter = null;
         
         this._pendingUserMsg = null;
         this._lastAssistantEl = null;
@@ -72,57 +73,61 @@ class RXCafeChat {
     toggleUIMode() {
         const currentAgent = this.agents?.find(a => a.name === this.agentName);
         const supportedUIs = currentAgent?.supportedUIs || ['chat'];
-        const isDiceAgent = this.agentName === 'dice';
-        
-        // For dice agent, allow toggling between chat and game-dice
-        if (supportedUIs.length <= 1 && !isDiceAgent) return;
-        
-        let nextMode;
-        if (isDiceAgent && supportedUIs.length === 1) {
-            // Dice agent without proper supportedUIs - toggle manually
-            nextMode = this.uiMode === 'game-dice' ? 'chat' : 'game-dice';
-        } else {
-            const currentIndex = supportedUIs.indexOf(this.uiMode);
-            const nextIndex = (currentIndex + 1) % supportedUIs.length;
-            nextMode = supportedUIs[nextIndex];
-        }
-        
+
+        // Only toggle if agent supports multiple UIs
+        if (supportedUIs.length <= 1) return;
+
+        const currentIndex = supportedUIs.indexOf(this.uiMode);
+        const nextIndex = (currentIndex + 1) % supportedUIs.length;
+        const nextMode = supportedUIs[nextIndex];
+
         this.switchUIMode(nextMode);
     }
     
-    updateUIModeButton() {
+    async updateUIModeButton() {
         if (!this.uiModeToggleBtn || !this.sessionId) {
             if (this.uiModeToggleBtn) this.uiModeToggleBtn.style.display = 'none';
             return;
         }
-        
+
+        // Load agents if not already loaded
+        if (!this.agents || this.agents.length === 0) {
+            await this.loadAgents();
+        }
+
         const currentAgent = this.agents?.find(a => a.name === this.agentName);
         const supportedUIs = currentAgent?.supportedUIs || ['chat'];
-        
-        // For dice agent or agents with multiple UIs, show the toggle button
-        const isDiceAgent = this.agentName === 'dice';
-        
-        if (supportedUIs.length <= 1 && !isDiceAgent) {
+
+        // Only show toggle for agents with multiple UI modes
+        if (supportedUIs.length <= 1) {
             this.uiModeToggleBtn.style.display = 'none';
             return;
         }
-        
+
         this.uiModeToggleBtn.style.display = 'flex';
-        
-        if (this.uiMode === 'game-dice') {
-            this.uiModeIcon.textContent = '💬';
-            this.uiModeToggleBtn.title = 'Switch to Chat';
-        } else {
-            this.uiModeIcon.textContent = '🎲';
-            this.uiModeToggleBtn.title = 'Switch to Dice Roller';
-        }
+
+        // Set icon based on current mode and available modes
+        const currentIndex = supportedUIs.indexOf(this.uiMode);
+        const nextIndex = (currentIndex + 1) % supportedUIs.length;
+        const nextMode = supportedUIs[nextIndex];
+
+        // Icon mapping for common UI modes
+        const iconMap = {
+            'chat': '💬',
+            'game-dice': '🎲',
+            'voice': '🎤',
+            'image': '🖼️'
+        };
+
+        this.uiModeIcon.textContent = iconMap[nextMode] || '🔄';
+        this.uiModeToggleBtn.title = `Switch to ${nextMode}`;
     }
 
-    handleHashChange() {
+    async handleHashChange() {
         const hashId = window.location.hash.substring(1);
         if (hashId && hashId !== this.sessionId) {
             console.log(`[RXCAFE] Hash changed to ${hashId}, switching...`);
-            this.sessionsManager.switchToSession(hashId);
+            await this.sessionsManager.switchToSession(hashId);
         } else if (!hashId && this.sessionId) {
             // Hash cleared - go back to quickies
             console.log('[RXCAFE] Hash cleared, showing quickies');
@@ -131,7 +136,7 @@ class RXCafeChat {
                 window.quickiesManager.onSessionChange(null);
             }
             this.disconnectStream();
-            this.updateUIState();
+            await this.updateUIState();
         }
     }
 
@@ -259,7 +264,7 @@ class RXCafeChat {
         this.messageInput.focus();
         
         this.isGenerating = true;
-        this.updateUIState();
+        await this.updateUIState();
         
         this.currentMessageEl = this.createMessageElement('assistant', '');
         this.currentMessageEl.classList.add('streaming');
@@ -327,11 +332,11 @@ class RXCafeChat {
             }
             this.currentMessageEl = null;
             this.currentContent = '';
-            this.updateUIState();
+            await this.updateUIState();
             this.messageInput.focus();
         }
     }
-    
+
     async toggleRecording() {
         this.recordingManager.toggle();
     }
@@ -494,9 +499,9 @@ class RXCafeChat {
         }
     }
     
-    updateUIState() {
+    async updateUIState() {
         this.uiManager.updateUIState();
-        this.updateUIModeButton();
+        await this.updateUIModeButton();
     }
     
     connectStream(sessionId) {
@@ -759,7 +764,7 @@ class RXCafeChat {
     
     async loadAgents() {
         await this.sessionsManager.loadAgents();
-        this.updateUIModeButton();
+        await this.updateUIModeButton();
     }
     
     async switchToSession(sessionId) {
@@ -802,35 +807,51 @@ class RXCafeChat {
             console.error('Failed to save UI mode:', err);
         }
         
-        this.showUIMode(mode);
+        await this.showUIMode(mode);
     }
-    
-    showUIMode(mode) {
-        const diceView = document.getElementById('dice-view');
+
+    async showUIMode(mode) {
+        const customView = document.getElementById('dice-view'); // Reused for custom UIs
         const messagesView = document.getElementById('messages');
         const inputContainer = document.querySelector('.input-container');
-        
-        if (mode === 'game-dice') {
-            if (messagesView) messagesView.style.display = 'none';
-            if (inputContainer) inputContainer.style.display = 'none';
-            if (diceView) diceView.style.display = 'flex';
-            
-            if (!this.diceUIController) {
-                this.diceUIController = new DiceUIController(this);
-            }
-            this.diceUIController.init(this.sessionId);
-        } else {
-            if (diceView) diceView.style.display = 'none';
+        const quickiesView = document.getElementById('quickies-view');
+
+        // Hide all views first
+        if (quickiesView) quickiesView.style.display = 'none';
+        if (messagesView) messagesView.style.display = 'none';
+
+        if (mode === 'chat') {
+            // Standard chat mode
+            if (customView) customView.style.display = 'none';
             if (messagesView) messagesView.style.display = 'flex';
             if (inputContainer) inputContainer.style.display = 'flex';
-            
-            if (this.diceUIController) {
-                this.diceUIController.destroy();
-                this.diceUIController = null;
+
+            // Clean up custom UI adapter
+            if (this.customUIAdapter) {
+                this.customUIAdapter.destroy();
+                this.customUIAdapter = null;
             }
+        } else {
+            // Custom UI mode (game-dice, etc.)
+            if (messagesView) messagesView.style.display = 'none';
+            if (inputContainer) inputContainer.style.display = 'none';
+            if (customView) customView.style.display = 'flex';
+
+            // Clean up previous adapter
+            if (this.customUIAdapter) {
+                this.customUIAdapter.destroy();
+                this.customUIAdapter = null;
+            }
+
+            // Create appropriate adapter based on mode
+            if (mode === 'game-dice') {
+                this.customUIAdapter = new DiceUIAdapter(this);
+                this.customUIAdapter.init(this.sessionId);
+            }
+            // Future custom UI modes can be added here
         }
-        
-        this.updateUIModeButton();
+
+        await this.updateUIModeButton();
     }
 }
 

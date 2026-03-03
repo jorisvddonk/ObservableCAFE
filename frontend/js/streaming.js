@@ -136,10 +136,14 @@ export class StreamingManager {
             chat.addRawChunk(chunk);
             chat.renderChunk(chunk);
             
-            // Pass dice-specific chunks to dice controller if in dice mode
-            if (chat.diceUIController && chat.uiMode === 'game-dice') {
-                chat.diceUIController.handleChunk(chunk);
-            }
+            // Dispatch chunk event for any UI components that need it
+            // This decouples streaming from specific UI implementations
+            const chunkEvent = new CustomEvent('rxcafe:chunk', {
+                detail: { chunk, sessionId: chat.sessionId, uiMode: chat.uiMode },
+                bubbles: true,
+                composed: true
+            });
+            document.dispatchEvent(chunkEvent);
             
             chat.updateInspector();
         }

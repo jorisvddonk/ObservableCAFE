@@ -105,6 +105,14 @@ export function getJsFile(filename: string): string | null {
   }
 }
 
+export function getComponentFile(filename: string): string | null {
+  try {
+    return readFileSync(join(FRONTEND_DIR, 'components', filename), 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
 export interface FrontendHandler {
   getHtml: (token?: string) => string;
   getJs: () => string;
@@ -116,6 +124,7 @@ export interface FrontendHandler {
   getWidgetFile: (filename: string) => string | null;
   getWidgetCss: () => string;
   getJsFile: (filename: string) => string | null;
+  getComponentFile: (filename: string) => string | null;
 }
 
 export const frontendHandler: FrontendHandler = {
@@ -128,5 +137,6 @@ export const frontendHandler: FrontendHandler = {
   getIconSvg: getIconSvg,
   getWidgetFile: getWidgetFile,
   getWidgetCss: getWidgetCss,
-  getJsFile: getJsFile
+  getJsFile: getJsFile,
+  getComponentFile: getComponentFile
 };

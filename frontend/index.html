@@ -14,7 +14,17 @@
     <title>ObservableCAFE Chat</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/widgets/styles.css">
-    <link rel="stylesheet" href="/css/dice.css">
+    <!-- dice.css no longer needed - styles are in the Lit component -->
+    
+    <!-- Import Map for bare module specifiers -->
+    <script type="importmap">
+    {
+      "imports": {
+        "lit": "https://esm.sh/lit@3.3.2",
+        "lit/": "https://esm.sh/lit@3.3.2/"
+      }
+    }
+    </script>
 </head>
 <body>
     <div id="app">
@@ -89,56 +99,9 @@
                     </div>
                 </div>
                 
-                <!-- Dice Roller View -->
-                <div id="dice-view" class="view">
-                    <div class="dice-header">
-                        <h2><span class="dice-icon">🎲</span> Dice Roller</h2>
-                        <button id="dice-switch-chat" class="dice-switch-btn">Switch to Chat</button>
-                    </div>
-                    
-                    <div class="dice-selection-area">
-                        <div class="dice-selection-display">
-                            <div id="dice-selection" class="dice-selection-text empty">Select dice to roll</div>
-                        </div>
-                        
-                        <div class="dice-buttons">
-                            <button id="dice-btn-d4" class="dice-btn d4">d4</button>
-                            <button id="dice-btn-d6" class="dice-btn d6">d6</button>
-                            <button id="dice-btn-d8" class="dice-btn d8">d8</button>
-                            <button id="dice-btn-d10" class="dice-btn d10">d10</button>
-                            <button id="dice-btn-d12" class="dice-btn d12">d12</button>
-                            <button id="dice-btn-d20" class="dice-btn d20">d20</button>
-                            <button id="dice-btn-d100" class="dice-btn d100">d100</button>
-                        </div>
-                        
-                        <div class="modifier-buttons">
-                            <button id="dice-mod-plus" class="mod-btn plus">+5</button>
-                            <button id="dice-mod-minus" class="mod-btn minus">-5</button>
-                            <button id="dice-clear-btn" class="dice-clear-btn">Clear</button>
-                        </div>
-                        
-                        <div style="display: flex; justify-content: center; align-items: center; margin-top: 16px;">
-                            <button id="dice-roll-btn" class="dice-roll-btn" disabled>ROLL</button>
-                        </div>
-                        
-                        <div class="dice-actions">
-                            <button id="dice-llm-toggle" class="dice-toggle-btn active">🤖 On</button>
-                            <button id="dice-history-btn" class="dice-toggle-btn">📜 History</button>
-                        </div>
-                    </div>
-                    
-                    <div id="dice-history" class="dice-history">
-                        <div class="dice-empty">
-                            <div class="dice-empty-icon">🎲</div>
-                            <p>No rolls yet. Select dice and roll!</p>
-                        </div>
-                    </div>
-                    
-                    <div class="dice-chat-section">
-                        <div class="dice-chat-title">Chat Messages</div>
-                        <div id="dice-chat-messages" class="dice-chat-messages"></div>
-                    </div>
-                </div>
+                <!-- Custom UI View Container -->
+                <!-- Used by custom UI components like dice-roller -->
+                <div id="dice-view" class="view" style="display: none;"></div>
                 
                 <div class="input-container">
                     <div class="input-wrapper">
@@ -301,7 +264,6 @@
             });
         }
     </script>
-    <script type="module" src="https://cdn.jsdelivr.net/npm/lit@3/+esm"></script>
     <script type="module" src="/widgets/afe-select.js"></script>
     <script type="module" src="/widgets/afe-radio.js"></script>
     <script type="module" src="/widgets/afe-text.js"></script>
@@ -319,7 +281,7 @@
     <script type="module" src="/widgets/rx-quick-responses.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
-    <script src="/js/dice-ui.js"></script>
+    <script type="module" src="/js/dice-ui.js"></script>
     <script src="/js/quickies.js"></script>
     <script type="module" src="/app.js"></script>
 </body>

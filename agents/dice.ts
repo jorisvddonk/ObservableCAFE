@@ -209,121 +209,123 @@ export const diceAgent: AgentDefinition = {
       mergeMap(async (chunk: Chunk) => {
         const content = chunk.content?.toString() || '';
         const trimmed = content.trim();
-        
+        let result: Chunk[] = [];
+        let isCommand = false;
+
         if (trimmed.startsWith('!roll ') || trimmed === '!roll') {
+          isCommand = true;
           const notation = trimmed.replace('!roll ', '').trim() || '1d20';
           const parsed = parseDiceNotation(notation);
-          
+
           if (parsed.error) {
-            const errorChunk = createTextChunk(
+            result = [createTextChunk(
               `Error: ${parsed.error}`,
               'dice-agent',
               { 'chat.role': 'assistant', 'dice.error': true }
-            );
-            return [errorChunk];
-          }
-          
-          const total = parsed.dice.reduce((a, b) => a + b, 0) + parsed.modifier;
-          
-          const roll: DiceRoll = {
-            notation,
-            dice: parsed.dice,
-            modifier: parsed.modifier,
-            total,
-            timestamp: Date.now(),
-          };
-          
-          state.rolls.push(roll);
-          
-          let comment = '';
-          if (state.llmComments && session.config.ollamaModel) {
-            comment = await generateLLMComment(session, roll, state.rolls);
-          }
-          
-          const resultText = `🎲 Rolled ${notation}: ${formatDiceResult(roll)}${roll.dice.length > 1 ? ` (${roll.dice.length} dice)` : ''}${comment ? `\n\n${comment}` : ''}`;
-          
-          const resultChunk = createTextChunk(
-            resultText,
-            'dice-agent',
-            {
-              'chat.role': 'assistant',
-              'dice.notation': notation,
-              'dice.rolls': roll.dice,
-              'dice.modifier': roll.modifier,
-              'dice.total': roll.total,
-              'dice.timestamp': roll.timestamp,
-              'dice.comment': comment || undefined,
+            )];
+          } else {
+            const total = parsed.dice.reduce((a, b) => a + b, 0) + parsed.modifier;
+
+            const roll: DiceRoll = {
+              notation,
+              dice: parsed.dice,
+              modifier: parsed.modifier,
+              total,
+              timestamp: Date.now(),
+            };
+
+            state.rolls.push(roll);
+
+            let comment = '';
+            if (state.llmComments && session.config.ollamaModel) {
+              comment = await generateLLMComment(session, roll, state.rolls);
             }
-          );
-          
-          const stateChunk = createNullChunk(
-            'dice-agent',
-            { 'dice.roll': roll }
-          );
-          
-          return [resultChunk, stateChunk];
-        }
-        
-        if (trimmed === '!history' || trimmed === '!h') {
+
+            const resultText = `🎲 Rolled ${notation}: ${formatDiceResult(roll)}${roll.dice.length > 1 ? ` (${roll.dice.length} dice)` : ''}${comment ? `\n\n${comment}` : ''}`;
+
+            const resultChunk = createTextChunk(
+              resultText,
+              'dice-agent',
+              {
+                'chat.role': 'assistant',
+                'dice.notation': notation,
+                'dice.rolls': roll.dice,
+                'dice.modifier': roll.modifier,
+                'dice.total': roll.total,
+                'dice.timestamp': roll.timestamp,
+                'dice.comment': comment || undefined,
+              }
+            );
+
+            const stateChunk = createNullChunk(
+              'dice-agent',
+              { 'dice.roll': roll }
+            );
+
+            result = [resultChunk, stateChunk];
+          }
+        } else if (trimmed === '!history' || trimmed === '!h') {
+          isCommand = true;
           if (state.rolls.length === 0) {
-            return [createTextChunk(
+            result = [createTextChunk(
               'No rolls yet. Use !roll XdY to roll dice.',
               'dice-agent',
               { 'chat.role': 'assistant', 'dice.history': true }
             )];
+          } else {
+            const historyText = '📜 Roll History:\n' +
+              state.rolls.slice(-10).reverse().map((r, i) =>
+                `${state.rolls.length - i}. 🎲 ${r.notation} = ${r.total}`
+              ).join('\n');
+
+            result = [createTextChunk(
+              historyText,
+              'dice-agent',
+              { 'chat.role': 'assistant', 'dice.history': true }
+            )];
           }
-          
-          const historyText = '📜 Roll History:\n' + 
-            state.rolls.slice(-10).reverse().map((r, i) => 
-              `${state.rolls.length - i}. 🎲 ${r.notation} = ${r.total}`
-            ).join('\n');
-          
-          return [createTextChunk(
-            historyText,
-            'dice-agent',
-            { 'chat.role': 'assistant', 'dice.history': true }
-          )];
-        }
-        
-        if (trimmed === '!clear' || trimmed === '!c') {
+        } else if (trimmed === '!clear' || trimmed === '!c') {
+          isCommand = true;
           state.rolls = [];
-          
-          return [createTextChunk(
+          result = [createTextChunk(
             'Roll history cleared!',
             'dice-agent',
             { 'chat.role': 'assistant', 'dice.clear': true }
           ), createNullChunk('dice-agent', { 'dice.clear': true })];
-        }
-        
-        if (trimmed === '!comment on' || trimmed === '!llm on') {
+        } else if (trimmed === '!comment on' || trimmed === '!llm on') {
+          isCommand = true;
           state.llmComments = true;
-          
-          return [createTextChunk(
+          result = [createTextChunk(
             'LLM comments enabled! 🤖',
             'dice-agent',
             { 'chat.role': 'assistant', 'dice.llmComments': true }
           ), createNullChunk('dice-agent', { 'dice.llmComments': true })];
-        }
-        
-        if (trimmed === '!comment off' || trimmed === '!llm off') {
+        } else if (trimmed === '!comment off' || trimmed === '!llm off') {
+          isCommand = true;
           state.llmComments = false;
-          
-          return [createTextChunk(
+          result = [createTextChunk(
             'LLM comments disabled.',
             'dice-agent',
             { 'chat.role': 'assistant', 'dice.llmComments': false }
           ), createNullChunk('dice-agent', { 'dice.llmComments': false })];
-        }
-        
-        if (trimmed.startsWith('!')) {
-          return [createTextChunk(
+        } else if (trimmed.startsWith('!')) {
+          isCommand = true;
+          result = [createTextChunk(
             `Unknown command: ${trimmed}\n\nAvailable commands:\n!roll XdY - Roll dice (e.g., !roll 2d6+5)\n!history - Show roll history\n!clear - Clear history\n!comment on/off - Toggle LLM comments`,
             'dice-agent',
             { 'chat.role': 'assistant' }
           )];
+        } else {
+          // Pass through non-command messages
+          result = [chunk];
         }
-        
-        return [chunk];
+
+        // Signal completion for dice commands (non-streaming)
+        if (isCommand && session.callbacks?.onFinish) {
+          session.callbacks.onFinish();
+        }
+
+        return result;
       }),
       
       catchError((error: Error) => {
@@ -339,10 +341,14 @@ export const diceAgent: AgentDefinition = {
         } else {
           session.outputStream.next(chunks);
         }
+        // Signal completion for dice agent (non-streaming)
+        if (session.callbacks?.onFinish) {
+          session.callbacks.onFinish();
+        }
       },
       error: (error: Error) => session.errorStream.next(error)
     });
-    
+
     session.pipelineSubscription = sub;
   }
 };

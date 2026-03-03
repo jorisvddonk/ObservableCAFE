@@ -100,7 +100,7 @@ export class SessionsManager {
                     }
                 }
                 
-                this.chat.updateUIState();
+                await this.chat.updateUIState();
                 this.chat.updateInspector();
                 this.chat.renderSidebarSessionList();
 
