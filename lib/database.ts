@@ -151,6 +151,27 @@ export class Database {
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_agent_presets_name ON agent_presets(name)
     `);
+
+    // Create quickies table
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS quickies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        preset_id INTEGER NOT NULL REFERENCES agent_presets(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        emoji TEXT NOT NULL DEFAULT '⚡',
+        gradient_start TEXT NOT NULL DEFAULT '#6366f1',
+        gradient_end TEXT NOT NULL DEFAULT '#8b5cf6',
+        starter_chunk TEXT,
+        ui_mode TEXT NOT NULL DEFAULT 'chat',
+        display_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL
+      )
+    `);
+
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_quickies_order ON quickies(display_order)
+    `);
   }
 
   /**
@@ -940,6 +961,160 @@ export class Database {
       DELETE FROM agent_presets WHERE name = ?
     `);
     const result = stmt.run(name);
+    stmt.finalize();
+    return result.changes > 0;
+  }
+
+  // ============ QUICKIES ============
+
+  addQuickie(
+    presetId: number,
+    name: string,
+    emoji: string,
+    gradientStart: string,
+    gradientEnd: string,
+    options?: {
+      description?: string;
+      starterChunk?: { contentType: string; content: string; annotations?: Record<string, any> } | null;
+      uiMode?: 'chat' | 'custom';
+      displayOrder?: number;
+    }
+  ): number {
+    const now = Date.now();
+    const starterChunkJson = options?.starterChunk ? JSON.stringify(options.starterChunk) : null;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO quickies (preset_id, name, description, emoji, gradient_start, gradient_end, starter_chunk, ui_mode, display_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(
+      presetId,
+      name,
+      options?.description || null,
+      emoji,
+      gradientStart,
+      gradientEnd,
+      starterChunkJson,
+      options?.uiMode || 'chat',
+      options?.displayOrder ?? 0,
+      now
+    );
+    stmt.finalize();
+    return result.lastInsertRowid as number;
+  }
+
+  updateQuickie(
+    id: number,
+    updates: {
+      presetId?: number;
+      name?: string;
+      description?: string;
+      emoji?: string;
+      gradientStart?: string;
+      gradientEnd?: string;
+      starterChunk?: { contentType: string; content: string; annotations?: Record<string, any> } | null;
+      uiMode?: 'chat' | 'custom';
+      displayOrder?: number;
+    }
+  ): boolean {
+    const quickie = this.getQuickieById(id);
+    if (!quickie) return false;
+
+    const presetId = updates.presetId ?? quickie.presetId;
+    const name = updates.name ?? quickie.name;
+    const description = updates.description ?? quickie.description;
+    const emoji = updates.emoji ?? quickie.emoji;
+    const gradientStart = updates.gradientStart ?? quickie.gradientStart;
+    const gradientEnd = updates.gradientEnd ?? quickie.gradientEnd;
+    const starterChunkJson = updates.starterChunk !== undefined
+      ? (updates.starterChunk ? JSON.stringify(updates.starterChunk) : null)
+      : (quickie.starterChunk ? JSON.stringify(quickie.starterChunk) : null);
+    const uiMode = updates.uiMode ?? quickie.uiMode;
+    const displayOrder = updates.displayOrder ?? quickie.displayOrder;
+
+    const stmt = this.db.prepare(`
+      UPDATE quickies 
+      SET preset_id = ?, name = ?, description = ?, emoji = ?, gradient_start = ?, gradient_end = ?, starter_chunk = ?, ui_mode = ?, display_order = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(presetId, name, description, emoji, gradientStart, gradientEnd, starterChunkJson, uiMode, displayOrder, id);
+    stmt.finalize();
+    return result.changes > 0;
+  }
+
+  getQuickieById(id: number): {
+    id: number;
+    presetId: number;
+    name: string;
+    description: string | null;
+    emoji: string;
+    gradientStart: string;
+    gradientEnd: string;
+    starterChunk: { contentType: string; content: string; annotations?: Record<string, any> } | null;
+    uiMode: 'chat' | 'custom';
+    displayOrder: number;
+    createdAt: number;
+  } | undefined {
+    const stmt = this.db.prepare(`
+      SELECT id, preset_id as presetId, name, description, emoji, gradient_start as gradientStart, gradient_end as gradientEnd, starter_chunk as starterChunk, ui_mode as uiMode, display_order as displayOrder, created_at as createdAt
+      FROM quickies WHERE id = ?
+    `);
+    const result = stmt.get(id) as any;
+    stmt.finalize();
+    if (result) {
+      if (result.starterChunk) {
+        try {
+          result.starterChunk = JSON.parse(result.starterChunk);
+        } catch {
+          result.starterChunk = null;
+        }
+      }
+    }
+    return result;
+  }
+
+  listQuickies(): Array<{
+    id: number;
+    presetId: number;
+    presetName: string;
+    name: string;
+    description: string | null;
+    emoji: string;
+    gradientStart: string;
+    gradientEnd: string;
+    starterChunk: { contentType: string; content: string; annotations?: Record<string, any> } | null;
+    uiMode: 'chat' | 'custom';
+    displayOrder: number;
+    createdAt: number;
+  }> {
+    const stmt = this.db.prepare(`
+      SELECT 
+        q.id, q.preset_id as presetId, p.name as presetName, q.name, q.description, q.emoji, 
+        q.gradient_start as gradientStart, q.gradient_end as gradientEnd, 
+        q.starter_chunk as starterChunk, q.ui_mode as uiMode, q.display_order as displayOrder, q.created_at as createdAt
+      FROM quickies q
+      JOIN agent_presets p ON q.preset_id = p.id
+      ORDER BY q.display_order ASC, q.created_at DESC
+    `);
+    const results = stmt.all() as any[];
+    stmt.finalize();
+    return results.map(r => {
+      if (r.starterChunk) {
+        try {
+          r.starterChunk = JSON.parse(r.starterChunk);
+        } catch {
+          r.starterChunk = null;
+        }
+      }
+      return r;
+    });
+  }
+
+  deleteQuickie(id: number): boolean {
+    const stmt = this.db.prepare(`
+      DELETE FROM quickies WHERE id = ?
+    `);
+    const result = stmt.run(id);
     stmt.finalize();
     return result.changes > 0;
   }

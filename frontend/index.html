@@ -45,6 +45,7 @@
             <header class="header">
                 <div class="header-left">
                     <button id="sessions-sidebar-toggle-btn" class="btn btn-secondary" title="Toggle sessions">📱</button>
+                    <button id="quickies-nav-btn" class="btn btn-secondary" title="Quickies (Home)">🏠</button>
                     <h1>ObservableCAFE Chat</h1>
                 </div>
                 <div class="header-info">
@@ -63,7 +64,16 @@
             </header>
             
             <main class="chat-container">
-                <div id="messages" class="messages">
+                <div id="quickies-view" class="quickies-view">
+                    <div class="quickies-header">
+                        <h2>Quick Launch</h2>
+                        <button id="manage-quickies-btn" class="btn btn-secondary" title="Manage Quickies">⚙️ Manage</button>
+                    </div>
+                    <div id="quickies-grid" class="quickies-grid">
+                        <div class="quickies-loading">Loading quickies...</div>
+                    </div>
+                </div>
+                <div id="messages" class="messages" style="display: none;">
                     <div class="welcome-message">
                         <h2>Welcome to ObservableCAFE Chat</h2>
                         <p>A reactive chat application built with the CAFE architecture.</p>
@@ -141,6 +151,80 @@
         </div>
     </div>
 
+    <!-- Quickies Management Modal -->
+    <div id="quickies-modal" class="modal" style="display: none;">
+        <div class="modal-content modal-content-large">
+            <div class="quickies-manager-header">
+                <h2>Manage Quickies</h2>
+                <button id="quickies-modal-close" class="btn btn-secondary btn-small">✕</button>
+            </div>
+            <div class="quickies-manager-content">
+                <div id="quickies-list" class="quickies-list">
+                    <p>Loading...</p>
+                </div>
+                <div class="quickies-form-container">
+                    <h3 id="quickie-form-title">Add Quickie</h3>
+                    <form id="quickie-form">
+                        <input type="hidden" id="quickie-id" value="">
+                        <div class="form-group">
+                            <label for="quickie-preset">Preset *</label>
+                            <select id="quickie-preset" required>
+                                <option value="">Select a preset...</option>
+                            </select>
+                            <div id="quickie-preset-warning" class="form-warning" style="display: none;">
+                                No presets found. Create a preset first via the wizard (New Session button).
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="quickie-name">Name *</label>
+                            <input type="text" id="quickie-name" placeholder="e.g., Deploy Assistant" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quickie-description">Description</label>
+                            <input type="text" id="quickie-description" placeholder="Optional description">
+                        </div>
+                        <div class="form-group">
+                            <label for="quickie-emoji">Emoji *</label>
+                            <input type="text" id="quickie-emoji" placeholder="🚀" value="🚀" maxlength="2" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="quickie-gradient-start">Gradient Start *</label>
+                                <input type="color" id="quickie-gradient-start" value="#6366f1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="quickie-gradient-end">Gradient End *</label>
+                                <input type="color" id="quickie-gradient-end" value="#8b5cf6" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Preview</label>
+                            <div id="quickie-preview" class="quickie-preview-btn">
+                                <span class="quickie-emoji">🚀</span>
+                                <span class="quickie-name">Preview</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="quickie-starter">Starter Message (optional)</label>
+                            <textarea id="quickie-starter" rows="3" placeholder="Message to auto-send when launching..."></textarea>
+                            <small>Leave empty for no auto-send</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="quickie-ui-mode">UI Mode</label>
+                            <select id="quickie-ui-mode">
+                                <option value="chat">Chat</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" id="quickie-cancel" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save Quickie</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sidebar Session Menu -->
     <div id="sidebar-menu" class="sidebar-menu" style="display: none;">
         <div class="sidebar-menu-item" id="sidebar-menu-rename">Rename</div>
@@ -179,6 +263,7 @@
     <script type="module" src="/widgets/rx-quick-responses.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+    <script src="/js/quickies.js"></script>
     <script type="module" src="/app.js"></script>
 </body>
 </html>

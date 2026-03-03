@@ -175,6 +175,7 @@ export async function handleListAgents(): Promise<Response> {
       description: a.description,
       startInBackground: a.startInBackground,
       configSchema: a.configSchema || { type: 'object', properties: {} },
+      supportedUIs: a.supportedUIs || ['chat'],
     }))
   }), { headers: { 'Content-Type': 'application/json' } });
 }

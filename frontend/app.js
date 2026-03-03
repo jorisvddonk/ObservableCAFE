@@ -26,6 +26,7 @@ class RXCafeChat {
         this.inspectorVisible = false;
         this.agents = [];
         this.knownSessions = [];
+        this.uiMode = 'chat';
         
         this._pendingUserMsg = null;
         this._lastAssistantEl = null;
@@ -51,8 +52,69 @@ class RXCafeChat {
         autoResize(this.messageInput);
         hideContextMenuOnClick(this.contextMenu);
         this.sessionsManager.loadSessions();
+        
+        this.uiModeToggleBtn = document.getElementById('ui-mode-toggle-btn');
+        this.uiModeIcon = document.getElementById('ui-mode-icon');
+        
+        if (this.uiModeToggleBtn) {
+            this.uiModeToggleBtn.addEventListener('click', () => this.toggleUIMode());
+        }
 
         window.addEventListener('hashchange', () => this.handleHashChange());
+        
+        // Initialize quickies manager
+        if (window.quickiesManager) {
+            window.quickiesManager.init();
+        }
+    }
+    
+    toggleUIMode() {
+        const currentAgent = this.agents?.find(a => a.name === this.agentName);
+        const supportedUIs = currentAgent?.supportedUIs || ['chat'];
+        const isDiceAgent = this.agentName === 'dice';
+        
+        // For dice agent, allow toggling between chat and game-dice
+        if (supportedUIs.length <= 1 && !isDiceAgent) return;
+        
+        let nextMode;
+        if (isDiceAgent && supportedUIs.length === 1) {
+            // Dice agent without proper supportedUIs - toggle manually
+            nextMode = this.uiMode === 'game-dice' ? 'chat' : 'game-dice';
+        } else {
+            const currentIndex = supportedUIs.indexOf(this.uiMode);
+            const nextIndex = (currentIndex + 1) % supportedUIs.length;
+            nextMode = supportedUIs[nextIndex];
+        }
+        
+        this.switchUIMode(nextMode);
+    }
+    
+    updateUIModeButton() {
+        if (!this.uiModeToggleBtn || !this.sessionId) {
+            if (this.uiModeToggleBtn) this.uiModeToggleBtn.style.display = 'none';
+            return;
+        }
+        
+        const currentAgent = this.agents?.find(a => a.name === this.agentName);
+        const supportedUIs = currentAgent?.supportedUIs || ['chat'];
+        
+        // For dice agent or agents with multiple UIs, show the toggle button
+        const isDiceAgent = this.agentName === 'dice';
+        
+        if (supportedUIs.length <= 1 && !isDiceAgent) {
+            this.uiModeToggleBtn.style.display = 'none';
+            return;
+        }
+        
+        this.uiModeToggleBtn.style.display = 'flex';
+        
+        if (this.uiMode === 'game-dice') {
+            this.uiModeIcon.textContent = '💬';
+            this.uiModeToggleBtn.title = 'Switch to Chat';
+        } else {
+            this.uiModeIcon.textContent = '🎲';
+            this.uiModeToggleBtn.title = 'Switch to Dice Roller';
+    }
     }
 
     handleHashChange() {
@@ -60,6 +122,15 @@ class RXCafeChat {
         if (hashId && hashId !== this.sessionId) {
             console.log(`[RXCAFE] Hash changed to ${hashId}, switching...`);
             this.sessionsManager.switchToSession(hashId);
+        } else if (!hashId && this.sessionId) {
+            // Hash cleared - go back to quickies
+            console.log('[RXCAFE] Hash cleared, showing quickies');
+            this.sessionId = null;
+            if (window.quickiesManager) {
+                window.quickiesManager.onSessionChange(null);
+            }
+            this.disconnectStream();
+            this.updateUIState();
         }
     }
 
@@ -424,6 +495,7 @@ class RXCafeChat {
     
     updateUIState() {
         this.uiManager.updateUIState();
+        this.updateUIModeButton();
     }
     
     connectStream(sessionId) {
@@ -686,6 +758,7 @@ class RXCafeChat {
     
     async loadAgents() {
         await this.sessionsManager.loadAgents();
+        this.updateUIModeButton();
     }
     
     async switchToSession(sessionId) {
@@ -710,6 +783,53 @@ class RXCafeChat {
     
     hideInspector() {
         this.uiManager.hideInspector();
+    }
+    
+    async switchUIMode(mode) {
+        if (!this.sessionId) return;
+        if (mode === this.uiMode) return;
+        
+        this.uiMode = mode;
+        
+        try {
+            await fetch(this.apiUrl(`/api/session/${this.sessionId}/ui-mode`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uiMode: mode })
+            });
+        } catch (err) {
+            console.error('Failed to save UI mode:', err);
+        }
+        
+        this.showUIMode(mode);
+    }
+    
+    showUIMode(mode) {
+        const diceView = document.getElementById('dice-view');
+        const messagesView = document.getElementById('messages');
+        const inputContainer = document.querySelector('.input-container');
+        
+        if (mode === 'game-dice') {
+            if (messagesView) messagesView.style.display = 'none';
+            if (inputContainer) inputContainer.style.display = 'none';
+            if (diceView) diceView.style.display = 'flex';
+            
+            if (!this.diceUIController) {
+                this.diceUIController = new DiceUIController(this);
+            }
+            this.diceUIController.init(this.sessionId);
+        } else {
+            if (diceView) diceView.style.display = 'none';
+            if (messagesView) messagesView.style.display = 'flex';
+            if (inputContainer) inputContainer.style.display = 'flex';
+            
+            if (this.diceUIController) {
+                this.diceUIController.destroy();
+                this.diceUIController = null;
+            }
+        }
+        
+        this.updateUIModeButton();
     }
 }
 

@@ -339,12 +339,37 @@ const server = serve({
       return addCors(await api.handleCreateSessionFromPreset(presetName), corsHeaders);
     }
     
+    // Quickies API
+    if (pathname === '/api/quickies' && request.method === 'GET') return addCors(api.handleListQuickies(), corsHeaders);
+    if (pathname === '/api/quickies' && request.method === 'POST') return addCors(api.handleCreateQuickie(await request.json().catch(() => ({}))), corsHeaders);
+    if (pathname.match(/^\/api\/quickies\/[^/]+$/) && request.method === 'GET') {
+      const quickieId = pathname.split('/')[3];
+      return addCors(api.handleGetQuickie(quickieId), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/quickies\/[^/]+$/) && request.method === 'PUT') {
+      const quickieId = pathname.split('/')[3];
+      return addCors(api.handleUpdateQuickie(quickieId, await request.json().catch(() => ({}))), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/quickies\/[^/]+$/) && request.method === 'DELETE') {
+      const quickieId = pathname.split('/')[3];
+      return addCors(api.handleDeleteQuickie(quickieId), corsHeaders);
+    }
+    if (pathname.match(/^\/api\/quickies\/[^/]+\/launch$/) && request.method === 'POST') {
+      const quickieId = pathname.split('/')[3];
+      return addCors(await api.handleLaunchQuickie(quickieId), corsHeaders);
+    }
+    
     if (pathname === '/api/agents' && request.method === 'GET') return addCors(await api.handleListAgents(), corsHeaders);
     if (pathname === '/api/sessions' && request.method === 'GET') return addCors(await api.handleListSessions(), corsHeaders);
     if (pathname === '/api/session' && request.method === 'POST') return addCors(await api.handleCreateSession(await request.json().catch(() => ({}))), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') return addCors(await api.handleDeleteSession(pathname.split('/')[3]), corsHeaders);
     if (pathname === '/api/models' && request.method === 'GET') return addCors(await api.handleListModels(url.searchParams.get('backend') || undefined), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+\/history$/) && request.method === 'GET') return addCors(await api.handleGetHistory(pathname.split('/')[3]), corsHeaders);
+    if (pathname.match(/^\/api\/session\/[^/]+\/ui-mode$/) && request.method === 'POST') {
+      const sessionId = pathname.split('/')[3];
+      const body = await request.json().catch(() => ({}));
+      return addCors(await api.handleSetUIMode(sessionId, body.uiMode || 'chat'), corsHeaders);
+    }
     if (pathname.match(/^\/api\/session\/[^/]+\/stream$/) && request.method === 'GET') return api.handleSessionStream(pathname.split('/')[3]);
     if (pathname.match(/^\/api\/session\/[^/]+\/errors$/) && request.method === 'GET') return addCors(await api.handleErrorStream(pathname.split('/')[3]), corsHeaders);
     

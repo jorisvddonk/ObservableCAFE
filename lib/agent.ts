@@ -30,9 +30,10 @@ export interface AgentDefinition {
   name: string;
   description?: string;
   startInBackground?: boolean;
-  allowsReload?: boolean;  // Defaults to true; set to false to prevent reloads (for stateful agents)
-  persistsState?: boolean; // Defaults to true; set to false to disable auto-persistence
-  configSchema?: Record<string, any>;  // JSON Schema draft-07
+  allowsReload?: boolean;
+  persistsState?: boolean;
+  configSchema?: Record<string, any>;
+  supportedUIs?: string[];  // e.g., ['chat', 'game-dice'] - defaults to ['chat']
   
   initialize(session: AgentSessionContext): void | Promise<void>;
   destroy?(session: AgentSessionContext): void | Promise<void>;

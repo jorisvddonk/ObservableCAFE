@@ -22,7 +22,7 @@ export class SessionsManager {
                 if (!this.chat.sessionId && data.sessions.length > 0) {
                     const hashId = window.location.hash.substring(1);
                     const sessionInHash = data.sessions.find(s => s.id === hashId);
-                    
+
                     if (sessionInHash) {
                         console.log(`[RXCAFE] Auto-connecting to session from URL hash: ${hashId}`);
                         await this.chat.switchToSession(hashId);
@@ -31,6 +31,11 @@ export class SessionsManager {
                         if (recentSession) {
                             await this.chat.switchToSession(recentSession.id);
                         }
+                    }
+
+                    // If still no session, show quickies view
+                    if (!this.chat.sessionId && window.quickiesManager) {
+                        window.quickiesManager.onSessionChange(null);
                     }
                 }
             }
@@ -78,6 +83,9 @@ export class SessionsManager {
                 this.chat.backend = backend;
                 this.chat.model = model;
                 
+                this.chat.uiMode = data.uiMode || 'chat';
+                this.chat.showUIMode(this.chat.uiMode);
+                
                 this.chat.updateHeaderInfo();
 
                 this.chat.messagesEl.innerHTML = '';
@@ -97,6 +105,11 @@ export class SessionsManager {
                 this.chat.renderSidebarSessionList();
 
                 this.chat.connectStream(sessionId);
+                
+                // Hide quickies view, show messages
+                if (window.quickiesManager) {
+                    window.quickiesManager.onSessionChange(sessionId);
+                }
             }
         } catch (error) {
             console.error('[RXCAFE] Failed to switch session:', error);
@@ -219,6 +232,11 @@ export class SessionsManager {
                 }
 
                 console.log('[RXCAFE] Session list updated after delete');
+                
+                // Show quickies view if no session
+                if (window.quickiesManager) {
+                    window.quickiesManager.onSessionChange(this.chat.sessionId);
+                }
             } else {
                 this.chat.showError(data.message || 'Failed to delete session');
             }

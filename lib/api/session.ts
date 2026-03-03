@@ -50,7 +50,8 @@ export async function handleCreateSession(body?: any): Promise<Response> {
       }
     }
     
-    const session = await createSession(config, { agentId, runtimeConfig });
+    const uiMode = body?.uiMode || 'chat';
+    const session = await createSession(config, { agentId, runtimeConfig, uiMode });
     
     if (body?.backend || body?.model || body?.systemPrompt || body?.llmParams) {
       const annotations: Record<string, any> = { 'config.type': 'runtime' };
@@ -74,6 +75,7 @@ export async function handleCreateSession(body?: any): Promise<Response> {
       sessionId: session.id,
       agentName: session.agentName,
       isBackground: session.isBackground,
+      uiMode: session.uiMode,
       message: 'Session created'
     }), { headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -96,7 +98,8 @@ export async function handleListSessions(): Promise<Response> {
           id: ps.id,
           agentName: ps.agentName,
           isBackground: ps.isBackground,
-          displayName: ps.id === ps.agentName ? ps.agentName : undefined
+          displayName: ps.id === ps.agentName ? ps.agentName : undefined,
+          uiMode: ps.uiMode
         });
       }
     }
@@ -126,6 +129,7 @@ export async function handleGetHistory(sessionId: string): Promise<Response> {
           agentId: sessionData.agentName,
           isBackground: sessionData.isBackground,
           sessionId: sessionId,
+          uiMode: sessionData.uiMode,
           ...sessionData.config,
           systemPrompt: sessionData.systemPrompt || undefined,
         });
@@ -145,6 +149,7 @@ export async function handleGetHistory(sessionId: string): Promise<Response> {
   return new Response(JSON.stringify({ 
     sessionId,
     displayName: session.displayName,
+    uiMode: session.uiMode,
     chunks: session.history
   }), { headers: { 'Content-Type': 'application/json' } });
 }
@@ -161,6 +166,7 @@ export async function handleToggleTrust(sessionId: string, chunkId: string, trus
           agentId: sessionData.agentName,
           isBackground: sessionData.isBackground,
           sessionId: sessionId,
+          uiMode: sessionData.uiMode,
           ...sessionData.config,
           systemPrompt: sessionData.systemPrompt || undefined,
         });
@@ -189,5 +195,45 @@ export async function handleToggleTrust(sessionId: string, chunkId: string, trus
     chunkId,
     trusted,
     message: trusted ? 'Chunk marked as trusted and added to LLM context' : 'Chunk marked as untrusted'
+  }), { headers: { 'Content-Type': 'application/json' } });
+}
+
+export async function handleSetUIMode(sessionId: string, uiMode: string): Promise<Response> {
+  let session = getSession(sessionId);
+  
+  if (!session && sessionStore) {
+    const sessionData = await sessionStore.loadSession(sessionId);
+    if (sessionData) {
+      const agent = getAgent(sessionData.agentName);
+      if (agent) {
+        session = await createSession(config, {
+          agentId: sessionData.agentName,
+          isBackground: sessionData.isBackground,
+          sessionId: sessionId,
+          uiMode: sessionData.uiMode,
+          ...sessionData.config,
+        });
+        
+        if (session._agentContext) {
+          await session._agentContext.loadState();
+        }
+      }
+    }
+  }
+  
+  if (!session) {
+    return new Response(JSON.stringify({ error: 'Session not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+  }
+  
+  session.uiMode = uiMode;
+  
+  if (sessionStore) {
+    await sessionStore.setSessionUIMode(sessionId, uiMode);
+  }
+  
+  return new Response(JSON.stringify({ 
+    success: true, 
+    sessionId,
+    uiMode
   }), { headers: { 'Content-Type': 'application/json' } });
 }

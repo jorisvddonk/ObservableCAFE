@@ -139,7 +139,8 @@ export interface Session {
   runtimeConfig: RuntimeSessionConfig;
   pipelineSubscription?: { unsubscribe: () => void };
   persistsState?: boolean;
-
+  uiMode?: string;
+  
   _agentContext?: AgentSessionContext;
 }
 
@@ -167,6 +168,7 @@ export interface CreateSessionOptions {
   agentId?: string;
   isBackground?: boolean;
   sessionId?: string;
+  uiMode?: string;
   runtimeConfig?: RuntimeSessionConfig;
 }
 
@@ -209,6 +211,7 @@ export async function createSession(
     systemPrompt: runtimeConfig.systemPrompt || null,
     runtimeConfig,
     persistsState: agent.persistsState !== false,
+    uiMode: options?.uiMode || 'chat',
   };
   
   const agentContext: AgentSessionContext = {
@@ -256,7 +259,7 @@ export async function createSession(
     
     persistState: async (): Promise<void> => {
       if (sessionStore) {
-        await sessionStore.saveSession(id, agentId, isBackground, {});
+        await sessionStore.saveSession(id, agentId, isBackground, {}, null, session.uiMode || 'chat');
         await sessionStore.saveHistory(id, session.history);
       }
     },
@@ -367,7 +370,7 @@ export async function createSession(
       if (sessionStore && session.persistsState !== false) {
         try {
           await sessionStore.saveHistory(id, session.history);
-          await sessionStore.saveSession(id, agentId, isBackground, {});
+          await sessionStore.saveSession(id, agentId, isBackground, {}, null, session.uiMode || 'chat');
         } catch (err) {
           console.error(`[Core] Failed to persist session ${id}:`, err);
         }
@@ -376,7 +379,7 @@ export async function createSession(
   });
   
   if (sessionStore) {
-    await sessionStore.saveSession(id, agentId, isBackground, {});
+    await sessionStore.saveSession(id, agentId, isBackground, {}, null, session.uiMode || 'chat');
   }
   
   await agent.initialize(agentContext);
@@ -478,7 +481,7 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     
     persistState: async (): Promise<void> => {
       if (sessionStore) {
-        await sessionStore.saveSession(session.id, session.agentName, session.isBackground, {});
+        await sessionStore.saveSession(session.id, session.agentName, session.isBackground, {}, null, session.uiMode || 'chat');
         await sessionStore.saveHistory(session.id, session.history);
       }
     },
@@ -499,12 +502,13 @@ export function listSessions(): string[] {
   return Array.from(sessions.keys());
 }
 
-export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean; displayName?: string }> {
+export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean; displayName?: string; uiMode?: string }> {
   return Array.from(sessions.values()).map(s => ({
     id: s.id,
     agentName: s.agentName,
     isBackground: s.isBackground,
     displayName: s.displayName,
+    uiMode: s.uiMode,
   }));
 }
 

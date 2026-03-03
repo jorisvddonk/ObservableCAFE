@@ -23,10 +23,18 @@ export class SessionStore {
         is_background INTEGER NOT NULL DEFAULT 0,
         config_json TEXT,
         system_prompt TEXT,
+        ui_mode TEXT NOT NULL DEFAULT 'chat',
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `);
+    
+    // Migration: Add ui_mode column if it doesn't exist
+    try {
+      this.db.run(`ALTER TABLE agent_sessions ADD COLUMN ui_mode TEXT NOT NULL DEFAULT 'chat'`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
     
     this.db.run(`
       CREATE TABLE IF NOT EXISTS session_chunks (
@@ -51,16 +59,16 @@ export class SessionStore {
     `);
   }
   
-  async saveSession(sessionId: string, agentName: string, isBackground: boolean, config: SessionConfig, systemPrompt: string | null): Promise<void> {
+  async saveSession(sessionId: string, agentName: string, isBackground: boolean, config: SessionConfig, systemPrompt: string | null, uiMode: string = 'chat'): Promise<void> {
     const now = Date.now();
     const configJson = JSON.stringify(config);
     
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO agent_sessions (id, agent_name, is_background, config_json, system_prompt, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM agent_sessions WHERE id = ?), ?), ?)
+      INSERT OR REPLACE INTO agent_sessions (id, agent_name, is_background, config_json, system_prompt, ui_mode, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM agent_sessions WHERE id = ?), ?), ?)
     `);
     
-    stmt.run(sessionId, agentName, isBackground ? 1 : 0, configJson, systemPrompt, sessionId, now, now);
+    stmt.run(sessionId, agentName, isBackground ? 1 : 0, configJson, systemPrompt, uiMode, sessionId, now, now);
     stmt.finalize();
   }
   
@@ -69,9 +77,10 @@ export class SessionStore {
     isBackground: boolean;
     config: SessionConfig;
     systemPrompt: string | null;
+    uiMode: string;
   } | null> {
     const stmt = this.db.prepare(`
-      SELECT agent_name, is_background, config_json, system_prompt
+      SELECT agent_name, is_background, config_json, system_prompt, ui_mode
       FROM agent_sessions WHERE id = ?
     `);
     
@@ -80,6 +89,7 @@ export class SessionStore {
       is_background: number;
       config_json: string;
       system_prompt: string | null;
+      ui_mode: string;
     } | undefined;
     
     stmt.finalize();
@@ -91,6 +101,7 @@ export class SessionStore {
       isBackground: result.is_background === 1,
       config: JSON.parse(result.config_json),
       systemPrompt: result.system_prompt,
+      uiMode: result.ui_mode || 'chat',
     };
   }
   
@@ -162,13 +173,13 @@ export class SessionStore {
     stmt.finalize();
   }
   
-  async listAllSessions(): Promise<Array<{ id: string; agentName: string; isBackground: boolean; updatedAt: number }>> {
+  async listAllSessions(): Promise<Array<{ id: string; agentName: string; isBackground: boolean; updatedAt: number; uiMode: string }>> {
     const stmt = this.db.prepare(`
-      SELECT id, agent_name, is_background, updated_at FROM agent_sessions
+      SELECT id, agent_name, is_background, updated_at, ui_mode FROM agent_sessions
       ORDER BY updated_at DESC
     `);
     
-    const results = stmt.all() as { id: string; agent_name: string; is_background: number; updated_at: number }[];
+    const results = stmt.all() as { id: string; agent_name: string; is_background: number; updated_at: number; ui_mode: string }[];
     stmt.finalize();
     
     return results.map(r => ({
@@ -176,6 +187,7 @@ export class SessionStore {
       agentName: r.agent_name,
       isBackground: r.is_background === 1,
       updatedAt: r.updated_at,
+      uiMode: r.ui_mode || 'chat',
     }));
   }
   
@@ -190,9 +202,9 @@ export class SessionStore {
     return results.map(r => ({ id: r.id, agentName: r.agent_name }));
   }
   
-  async getBackgroundSessionByAgentName(agentName: string): Promise<{ id: string; config: SessionConfig; systemPrompt: string | null } | null> {
+  async getBackgroundSessionByAgentName(agentName: string): Promise<{ id: string; config: SessionConfig; systemPrompt: string | null; uiMode: string } | null> {
     const stmt = this.db.prepare(`
-      SELECT id, config_json, system_prompt FROM agent_sessions
+      SELECT id, config_json, system_prompt, ui_mode FROM agent_sessions
       WHERE agent_name = ? AND is_background = 1
     `);
     
@@ -200,6 +212,7 @@ export class SessionStore {
       id: string;
       config_json: string;
       system_prompt: string | null;
+      ui_mode: string;
     } | undefined;
     
     stmt.finalize();
@@ -210,6 +223,7 @@ export class SessionStore {
       id: result.id,
       config: JSON.parse(result.config_json),
       systemPrompt: result.system_prompt,
+      uiMode: result.ui_mode || 'chat',
     };
   }
   
@@ -222,5 +236,11 @@ export class SessionStore {
     const result = stmt.run(cutoff);
     stmt.finalize();
     return result.changes;
+  }
+  
+  async setSessionUIMode(sessionId: string, uiMode: string): Promise<void> {
+    const stmt = this.db.prepare(`UPDATE agent_sessions SET ui_mode = ?, updated_at = ? WHERE id = ?`);
+    stmt.run(uiMode, Date.now(), sessionId);
+    stmt.finalize();
   }
 }
