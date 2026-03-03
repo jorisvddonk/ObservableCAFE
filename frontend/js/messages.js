@@ -353,7 +353,7 @@ export class MessagesManager {
         quickResponsesEl.addEventListener('quick-response', (e) => {
             if (this.chat.messageInput) {
                 this.chat.messageInput.value = e.detail.response;
-                this.chat.messageInput.focus();
+                this.chat.sendMessage();
             }
         });
 
