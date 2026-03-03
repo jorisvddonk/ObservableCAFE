@@ -345,10 +345,16 @@ export class MessagesManager {
             return;
         }
 
+        // Prevent duplicate quick responses for the same chunk
+        const existingId = 'quick-responses-' + chunk.id;
+        if (document.getElementById(existingId)) {
+            return;
+        }
+
         const quickResponsesEl = document.createElement('rx-quick-responses');
         quickResponsesEl.responses = quickResponses;
         quickResponsesEl.disabled = !this.chat.sessionId || this.chat.isGenerating;
-        quickResponsesEl.id = 'quick-responses-' + chunk.id;
+        quickResponsesEl.id = existingId;
 
         quickResponsesEl.addEventListener('quick-response', (e) => {
             if (this.chat.messageInput) {

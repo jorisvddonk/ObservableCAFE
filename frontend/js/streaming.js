@@ -125,6 +125,7 @@ export class StreamingManager {
                 chat.chunkElements.set(chunk.id, assistantEl);
                 assistantEl.dataset.annotations = JSON.stringify(chunk.annotations || {});
                 chat.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
+                chat.messagesManager.addQuickResponses(assistantEl, chunk);
                 delete assistantEl.dataset.pendingAssistant;
                 if (assistantEl === chat._lastAssistantEl) chat._lastAssistantEl = null;
                 chat.addRawChunk(chunk);
