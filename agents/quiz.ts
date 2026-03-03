@@ -162,10 +162,11 @@ export const quizAgent: AgentDefinition = {
 
         const currentQ = state.questions[state.currentQuestion];
         const userAnswer = content;
-        const isCorrect = currentQ.options.some((opt, idx) => 
-          opt.toLowerCase() === userAnswer || idx.toString() === userAnswer || 
-          userAnswer === ['a', 'b', 'c', 'd'][idx]
-        );
+        const correctOption = currentQ.options[currentQ.correctIndex].toLowerCase();
+        const isCorrect =
+          userAnswer === correctOption ||
+          userAnswer === currentQ.correctIndex.toString() ||
+          userAnswer === ['a', 'b', 'c', 'd'][currentQ.correctIndex];
 
         state.totalAnswered++;
         if (isCorrect) {
