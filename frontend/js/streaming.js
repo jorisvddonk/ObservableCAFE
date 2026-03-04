@@ -66,6 +66,15 @@ export class StreamingManager {
             const chunk = data.chunk;
             const role = chunk.annotations?.['chat.role'];
 
+            // Always dispatch chunk event first so UI components can react
+            // regardless of how the chat UI handles it
+            const chunkEvent = new CustomEvent('rxcafe:chunk', {
+                detail: { chunk, sessionId: chat.sessionId, uiMode: chat.uiMode },
+                bubbles: true,
+                composed: true
+            });
+            document.dispatchEvent(chunkEvent);
+
             if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
                 chat.backend = chunk.annotations['config.backend'] || chat.backend;
                 chat.model = chunk.annotations['config.model'] || chat.model;
@@ -136,16 +145,6 @@ export class StreamingManager {
             console.log(`[RXCAFE] New chunk from stream, rendering:`, chunk.id, chunk.contentType, chunk.content?.mimeType);
             chat.addRawChunk(chunk);
             chat.renderChunk(chunk);
-            
-            // Dispatch chunk event for any UI components that need it
-            // This decouples streaming from specific UI implementations
-            const chunkEvent = new CustomEvent('rxcafe:chunk', {
-                detail: { chunk, sessionId: chat.sessionId, uiMode: chat.uiMode },
-                bubbles: true,
-                composed: true
-            });
-            document.dispatchEvent(chunkEvent);
-            
             chat.updateInspector();
         }
     }

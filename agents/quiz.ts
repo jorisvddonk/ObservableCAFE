@@ -70,6 +70,7 @@ Keep your responses brief and friendly. Have fun!`;
 export const quizAgent: AgentDefinition = {
   name: 'quiz',
   description: 'A fun quiz game with multiple choice questions',
+  supportedUIs: ['chat', 'game-quiz'],
   configSchema: {
     type: 'object',
     properties: {

@@ -115,6 +115,7 @@ class RXCafeChat {
         const iconMap = {
             'chat': '💬',
             'game-dice': '🎲',
+            'game-quiz': '🎯',
             'voice': '🎤',
             'image': '🖼️'
         };
@@ -846,6 +847,9 @@ class RXCafeChat {
             // Create appropriate adapter based on mode
             if (mode === 'game-dice') {
                 this.customUIAdapter = new DiceUIAdapter(this);
+                this.customUIAdapter.init(this.sessionId);
+            } else if (mode === 'game-quiz') {
+                this.customUIAdapter = new QuizUIAdapter(this);
                 this.customUIAdapter.init(this.sessionId);
             }
             // Future custom UI modes can be added here
