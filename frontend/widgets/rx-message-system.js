@@ -32,11 +32,11 @@ export class RxMessageSystem extends LitElement {
       font-size: 0.875rem;
     }
     
-    .message.system-prompt {
-      background-color: var(--color-system-prompt, #fef3c7);
-      border: 1px solid #fcd34d;
-      color: var(--text-color, #1f2937);
-    }
+     .message.system-prompt {
+       background-color: var(--color-system-prompt, #fef3c7);
+       border: 1px solid var(--web-border-default, #fcd34d);
+       color: var(--text-color, #1f2937);
+     }
     
     .system-header {
       display: flex;
