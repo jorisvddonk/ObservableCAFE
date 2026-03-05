@@ -7,9 +7,22 @@ import { Database } from 'bun:sqlite';
 import type { Chunk } from './chunk.js';
 import type { SessionConfig, LLMParams } from './agent.js';
 
+function safeStringify(obj: any): string {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+}
+
 export class SessionStore {
   private db: Database;
-  
+
   constructor(db: Database) {
     this.db = db;
     this.initializeSchema();
@@ -130,7 +143,7 @@ export class SessionStore {
         };
       }
       
-      insertStmt.run(chunk.id, sessionId, JSON.stringify(serializedChunk), chunk.timestamp);
+      insertStmt.run(chunk.id, sessionId, safeStringify(serializedChunk), chunk.timestamp);
     }
     
     insertStmt.finalize();
