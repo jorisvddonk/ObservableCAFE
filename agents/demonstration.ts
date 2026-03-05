@@ -4,31 +4,31 @@ import { createTextChunk, createNullChunk, createBinaryChunk, annotateChunk } fr
 
 const DEMO_CHUNKS: Array<{ delay: number; generate: (session: AgentSessionContext) => Chunk | Chunk[] }> = [
   {
-    delay: 500,
+    delay: 300,
     generate: () => createTextChunk(
       '🎉 Welcome to the Demonstration Agent! 🎉\n\nThis agent showcases all the different widgets and content types supported by ObservableCAFE. Let\'s take a tour!',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 2500,
+    delay: 1000,
     generate: () => createTextChunk(
       '📝 **Text Messages**\n\nRegular text messages with markdown support! You can use *italic*, **bold**, and `code` formatting.',
       'demonstration',
-      { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Next →', 'Stop Demo'] }
+      { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Next →', 'Stop Demo'], 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 6000,
+    delay: 2000,
     generate: () => createTextChunk(
       '💻 **Code Block**\n\nHere\'s some code with syntax highlighting:',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 6500,
+    delay: 2300,
     generate: () => createTextChunk(
       `function greet(name: string): string {
   return \`Hello, \${name}!\`;
@@ -45,15 +45,15 @@ console.log(greet("World"));`,
     )
   },
   {
-    delay: 10000,
+    delay: 3200,
     generate: () => createTextChunk(
       '📊 **Diff View**\n\nShowing changes between two versions:',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 10500,
+    delay: 3500,
     generate: () => createTextChunk(
       `- const add = (a, b) => a + b;
 + const add = (a: number, b: number): number => a + b;`,
@@ -68,15 +68,15 @@ console.log(greet("World"));`,
     )
   },
   {
-    delay: 15000,
+    delay: 4300,
     generate: () => createTextChunk(
       '🎲 **Dice Rolls**\n\nLet\'s roll some dice!',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 15500,
+    delay: 4600,
     generate: () => {
       const dice = [Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1];
       const total = dice.reduce((a, b) => a + b, 0);
@@ -94,15 +94,15 @@ console.log(greet("World"));`,
     }
   },
   {
-    delay: 20000,
+    delay: 5300,
     generate: () => createTextChunk(
       '🔧 **Tool Calls**\n\nI can call tools like dice roller:',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 20500,
+    delay: 5600,
     generate: () => {
       const roll = Math.floor(Math.random() * 20) + 1;
       return createTextChunk(
@@ -121,15 +121,15 @@ console.log(greet("World"));`,
     }
   },
   {
-    delay: 25000,
+    delay: 6300,
     generate: () => createTextChunk(
       '🌐 **Web Content**\n\nI can fetch and display web content:',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 25500,
+    delay: 6600,
     generate: () => createTextChunk(
       '📰 Latest News: AI models are getting smarter every day!',
       'demonstration',
@@ -141,33 +141,34 @@ console.log(greet("World"));`,
     )
   },
   {
-    delay: 30000,
+    delay: 7300,
     generate: () => createTextChunk(
       '📋 **Quick Responses**\n\nI can offer quick response buttons:',
       'demonstration',
       { 
         'chat.role': 'assistant',
-        'com.rxcafe.quickResponses': ['Option A', 'Option B', 'Option C']
+        'com.rxcafe.quickResponses': ['Option A', 'Option B', 'Option C'],
+        'parsers.markdown.enabled': true
       }
     )
   },
   {
-    delay: 35000,
+    delay: 8000,
     generate: () => createTextChunk(
       '💡 **System Prompts**\n\nInternal system messages (not shown in chat):',
       'demonstration',
-      { 'chat.role': 'system', 'session.name': 'demonstration-session' }
+      { 'chat.role': 'system', 'session.name': 'demonstration-session', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 40000,
+    delay: 8500,
     generate: () => createNullChunk(
       'demonstration',
       { 'session.name': 'Demonstration Agent Session' }
     )
   },
   {
-    delay: 45000,
+    delay: 9000,
     generate: () => createTextChunk(
       '🔄 **Pipeline Visualization**\n\nRxJS marble diagram representation:',
       'demonstration',
@@ -178,39 +179,41 @@ console.log(greet("World"));`,
         'visualizer.pipeline': [
           { stream: 'input', events: [{ time: 0, value: 'a', type: 'N' }, { time: 10, value: 'b', type: 'N' }] },
           { stream: 'output', events: [{ time: 30, value: 'a', type: 'N' }, { time: 40, value: 'b', type: 'N' }] }
-        ]
+        ],
+        'parsers.markdown.enabled': true
       }
     )
   },
   {
-    delay: 50000,
+    delay: 10000,
     generate: () => createTextChunk(
       '😊 **Sentiment Analysis**\n\nI can analyze the sentiment of messages:',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 50500,
+    delay: 10300,
     generate: () => createTextChunk(
       'Hello! I am having an amazing day!',
       'demonstration',
       {
         'chat.role': 'user',
-        'com.rxcafe.example.sentiment': { score: 0.9, label: 'positive' }
+        'com.rxcafe.example.sentiment': { score: 0.9, label: 'positive' },
+        'parsers.markdown.enabled': true
       }
     )
   },
   {
-    delay: 55000,
+    delay: 11000,
     generate: () => createTextChunk(
       '🖼️ **Images**\n\n(I cannot generate real images in this demo, but the widget supports: PNG, JPEG, GIF, WebP, SVG)',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 60000,
+    delay: 11500,
     generate: () => {
       const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
   <rect fill="#4a90d9" width="200" height="100" rx="10"/>
@@ -229,15 +232,15 @@ console.log(greet("World"));`,
     }
   },
   {
-    delay: 65000,
+    delay: 12200,
     generate: () => createTextChunk(
       '🔊 **Audio**\n\n(Audio playback widget for voice/sound)',
       'demonstration',
-      { 'chat.role': 'assistant' }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
-    delay: 70000,
+    delay: 12600,
     generate: () => {
       const silentAudio = new Uint8Array([0x00, 0x00, 0x00, 0x00]); // Minimal valid WAV header placeholder
       return createBinaryChunk(
@@ -252,11 +255,54 @@ console.log(greet("World"));`,
     }
   },
   {
-    delay: 75000,
+    delay: 13100,
     generate: () => createTextChunk(
-      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n\nThanks for watching! 🎉',
+      '🌤️ **Weather Widget**\n\nReal-time weather information with forecast:',
       'demonstration',
-      { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Restart Demo'] }
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
+    )
+  },
+  {
+    delay: 13500,
+    generate: () => {
+      const weatherData = {
+        location: { latitude: 51.5074, longitude: -0.1278 },
+        current: {
+          time: new Date().toISOString(),
+          temperature: 15,
+          weathercode: 2,
+          windspeed: 12,
+          winddirection: 180
+        },
+        daily: Array.from({ length: 7 }, (_, i) => {
+          const date = new Date();
+          date.setDate(date.getDate() + i + 1);
+          return {
+            date: date.toISOString(),
+            maxTemp: 15 + Math.random() * 10,
+            minTemp: 5 + Math.random() * 5,
+            weathercode: Math.floor(Math.random() * 4)
+          };
+        })
+      };
+      return createTextChunk(
+        JSON.stringify(weatherData),
+        'demonstration',
+        {
+          'chat.role': 'assistant',
+          'weather.data': true,
+          'weather.location': 'London, UK',
+          'weather.timezone': 'Europe/London'
+        }
+      );
+    }
+  },
+  {
+    delay: 14500,
+    generate: () => createTextChunk(
+      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Weather widget\n\nThanks for watching! 🎉',
+      'demonstration',
+      { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Restart Demo'], 'parsers.markdown.enabled': true }
     )
   }
 ];
