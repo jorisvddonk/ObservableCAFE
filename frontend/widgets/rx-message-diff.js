@@ -147,50 +147,51 @@ export class RxMessageDiff extends LitElement {
       font-weight: bold;
     }
     
-    .diff-content {
-      display: table-cell;
-      padding: 0.125rem 0.5rem;
-      white-space: pre;
-      width: 100%;
-    }
+     .diff-content {
+       display: table-cell;
+       padding: 0.125rem 0.5rem;
+       white-space: pre;
+       width: 100%;
+       color: var(--assistant-text, #1f2937);
+     }
     
-    /* Line states */
-    .diff-row.added {
-      background-color: #dcfce7;
-    }
-    
-    .diff-row.added .diff-gutter {
-      background-color: #bbf7d0;
-    }
-    
-    .diff-row.added .diff-marker {
-      color: #16a34a;
-    }
-    
-    .diff-row.removed {
-      background-color: #fee2e2;
-    }
-    
-    .diff-row.removed .diff-gutter {
-      background-color: #fecaca;
-    }
-    
-    .diff-row.removed .diff-marker {
-      color: #dc2626;
-    }
-    
-    .diff-row.context {
-      color: var(--text-secondary, #6b7280);
-    }
-    
-    .diff-row.header {
-      background-color: #e0e7ff;
-    }
-    
-    .diff-row.header .diff-content {
-      color: #3730a3;
-      font-weight: 600;
-    }
+     /* Line states */
+     .diff-row.added {
+       background-color: var(--diff-added-bg, #dcfce7);
+     }
+     
+     .diff-row.added .diff-gutter {
+       background-color: var(--diff-added-gutter, #bbf7d0);
+     }
+     
+     .diff-row.added .diff-marker {
+       color: var(--diff-added-text, #16a34a);
+     }
+     
+     .diff-row.removed {
+       background-color: var(--diff-removed-bg, #fee2e2);
+     }
+     
+     .diff-row.removed .diff-gutter {
+       background-color: var(--diff-removed-gutter, #fecaca);
+     }
+     
+     .diff-row.removed .diff-marker {
+       color: var(--diff-removed-text, #dc2626);
+     }
+     
+     .diff-row.context {
+       color: var(--text-secondary, #6b7280);
+     }
+     
+     .diff-row.header {
+       background-color: var(--diff-header-bg, #e0e7ff);
+     }
+     
+     .diff-row.header .diff-content {
+       color: var(--diff-header-text, #3730a3);
+       font-weight: 600;
+     }
     
     /* Split diff view */
     .split-diff {
@@ -222,15 +223,15 @@ export class RxMessageDiff extends LitElement {
       color: #16a34a;
     }
     
-    /* Syntax highlighting in diff */
-    .diff-content .keyword { color: #d73a49; font-weight: bold; }
-    .diff-content .string { color: #032f62; }
-    .diff-content .comment { color: #6a737d; font-style: italic; }
-    .diff-content .number { color: #005cc5; }
-    .diff-content .function { color: #6f42c1; }
-    
-    .diff-row.added .diff-content .string { color: #047857; }
-    .diff-row.removed .diff-content .string { color: #991b1b; }
+     /* Syntax highlighting in diff */
+     .diff-content .keyword { color: var(--diff-keyword, #d73a49); font-weight: bold; }
+     .diff-content .string { color: var(--diff-string, #032f62); }
+     .diff-content .comment { color: var(--diff-comment, #6a737d); font-style: italic; }
+     .diff-content .number { color: var(--diff-number, #005cc5); }
+     .diff-content .function { color: var(--diff-function, #6f42c1); }
+     
+     .diff-row.added .diff-content .string { color: var(--diff-added-string, #047857); }
+     .diff-row.removed .diff-content .string { color: var(--diff-removed-string, #991b1b); }
     
     .copied-toast {
       position: absolute;
