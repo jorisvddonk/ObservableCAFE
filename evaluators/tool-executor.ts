@@ -23,6 +23,7 @@ import {
   SheetbotListLibraryTool,
   SHEETBOT_SYSTEM_PROMPT
 } from '../tools/sheetbot.js';
+import { WeatherTool } from '../tools/weather.js';
 
 export interface Tool {
   name: string;
@@ -52,7 +53,8 @@ const ALL_TOOLS: Map<string, Tool> = new Map([
   ['sheetbot_create_task', new SheetbotCreateTaskTool()],
   ['sheetbot_delete_task', new SheetbotDeleteTaskTool()],
   ['sheetbot_list_agents', new SheetbotListAgentsTool()],
-  ['sheetbot_list_library', new SheetbotListLibraryTool()]
+  ['sheetbot_list_library', new SheetbotListLibraryTool()],
+  ['getWeather', new WeatherTool()]
 ]);
 
 export function getTool(name: string): Tool | undefined {
@@ -285,6 +287,11 @@ function formatToolResult(toolName: string, result: any): string {
     }
     
     return JSON.stringify(result, null, 2);
+  }
+
+  if (toolName === 'getWeather') {
+    const weatherTool = ALL_TOOLS.get('getWeather') as WeatherTool;
+    return weatherTool.formatResult(result);
   }
 
   return JSON.stringify(result, null, 2);
