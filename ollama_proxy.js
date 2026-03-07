@@ -154,6 +154,16 @@ function render() {
             term.dim(line + "\n");
           });
         }
+
+        if (req.responseText && visibleFields.has("prompt")) {
+          let resp = req.responseText;
+          if (truncate && resp.length > 80 && resp !== "[streaming]") {
+            resp = resp.slice(0, 80) + "...";
+          }
+          term.cyan(idStr);
+          term.green(" Response: ");
+          term.bold(resp.replace(/\n/g, " ") + "\n");
+        }
       }
 
       term.cyan(idStr + " ");
@@ -269,6 +279,25 @@ Bun.serve({
     });
 
     const latency = Date.now() - start;
+    let responseText = null;
+    let isStreaming = false;
+
+    if (bodyData) {
+      isStreaming = bodyData.stream === true;
+    }
+
+    if (!isStreaming && (url.pathname === "/api/generate" || url.pathname === "/api/chat")) {
+      const cloned = response.clone();
+      const text = await cloned.text();
+      try {
+        const json = JSON.parse(text);
+        if (json.response) responseText = json.response;
+        else if (json.message) responseText = json.message.content;
+      } catch {}
+      responseText = responseText || text.slice(0, 200);
+    } else if (isStreaming) {
+      responseText = "[streaming]";
+    }
 
     addRequest({
       id,
@@ -279,6 +308,7 @@ Bun.serve({
       rawBody: bodyText,
       status: response.status,
       latency,
+      responseText,
     });
 
     return new Response(response.body, {
