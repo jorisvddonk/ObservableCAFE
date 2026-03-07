@@ -257,13 +257,51 @@ console.log(greet("World"));`,
   {
     delay: 13100,
     generate: () => createTextChunk(
-      '🌤️ **Weather Widget**\n\nReal-time weather information with forecast:',
+      '📁 **Files**\n\nI can display files with download capability:',
       'demonstration',
       { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
   },
   {
     delay: 13500,
+    generate: () => {
+      const pdfData = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF header
+      return createBinaryChunk(
+        pdfData,
+        'application/pdf',
+        'demonstration',
+        {
+          'chat.role': 'assistant',
+          'file.name': 'document.pdf'
+        }
+      );
+    }
+  },
+  {
+    delay: 14000,
+    generate: () => {
+      const zipData = new Uint8Array([0x50, 0x4B, 0x03, 0x04]); // PK zip header
+      return createBinaryChunk(
+        zipData,
+        'application/zip',
+        'demonstration',
+        {
+          'chat.role': 'assistant',
+          'file.name': 'archive.zip'
+        }
+      );
+    }
+  },
+  {
+    delay: 14500,
+    generate: () => createTextChunk(
+      '🌤️ **Weather Widget**\n\nReal-time weather information with forecast:',
+      'demonstration',
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
+    )
+  },
+  {
+    delay: 14900,
     generate: () => {
       const weatherData = {
         location: { latitude: 51.5074, longitude: -0.1278 },
@@ -298,9 +336,9 @@ console.log(greet("World"));`,
     }
   },
   {
-    delay: 14500,
+    delay: 15500,
     generate: () => createTextChunk(
-      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Weather widget\n\nThanks for watching! 🎉',
+      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Files (binary)\n• Weather widget\n\nThanks for watching! 🎉',
       'demonstration',
       { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Restart Demo'], 'parsers.markdown.enabled': true }
     )
