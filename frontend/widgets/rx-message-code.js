@@ -1,4 +1,5 @@
-import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html, css } from 'https://esm.sh/lit@3.3.2';
+import { unsafeHTML } from 'https://esm.sh/lit@3.3.2/directives/unsafe-html.js';
 
 export class RxMessageCode extends LitElement {
   static properties = {
@@ -111,30 +112,97 @@ export class RxMessageCode extends LitElement {
       tab-size: 2;
       white-space: pre;
       word-wrap: normal;
+      background: transparent;
     }
     
     code {
       font-family: inherit;
+      background: transparent;
     }
     
-    /* Syntax highlighting colors - light theme */
-    .keyword { color: #d73a49; font-weight: bold; }
-    .string { color: #032f62; }
-    .comment { color: #6a737d; font-style: italic; }
-    .number { color: #005cc5; }
-    .function { color: #6f42c1; }
-    .operator { color: #d73a49; }
-    .tag { color: #22863a; }
-    .attr { color: #6f42c1; }
+    /* Prism token colors - light theme */
+    :host-context(.light) .token.comment,
+    :host-context(.light) .token.prolog,
+    :host-context(.light) .token.doctype,
+    :host-context(.light) .token.cdata { color: #6a737d; }
     
-    :host([role="user"]) .keyword,
-    :host([role="user"]) .operator { color: #ffcccb; }
-    :host([role="user"]) .string { color: #90ee90; }
-    :host([role="user"]) .comment { color: #cccccc; }
-    :host([role="user"]) .number { color: #87ceeb; }
-    :host([role="user"]) .function { color: #dda0dd; }
-    :host([role="user"]) .tag { color: #98fb98; }
-    :host([role="user"]) .attr { color: #dda0dd; }
+    :host-context(.light) .token.punctuation { color: #24292e; }
+    
+    :host-context(.light) .token.property,
+    :host-context(.light) .token.tag,
+    :host-context(.light) .token.boolean,
+    :host-context(.light) .token.number,
+    :host-context(.light) .token.constant,
+    :host-context(.light) .token.symbol { color: #005cc5; }
+    
+    :host-context(.light) .token.selector,
+    :host-context(.light) .token.attr-name,
+    :host-context(.light) .token.string,
+    :host-context(.light) .token.char,
+    :host-context(.light) .token.builtin { color: #032f62; }
+    
+    :host-context(.light) .token.operator,
+    :host-context(.light) .token.entity,
+    :host-context(.light) .token.url,
+    :host-context(.light) .language-css .token.string,
+    :host-context(.light) .style .token.string { color: #d73a49; }
+    
+    :host-context(.light) .token.atrule,
+    :host-context(.light) .token.attr-value,
+    :host-context(.light) .token.keyword { color: #d73a49; }
+    
+    :host-context(.light) .token.function,
+    :host-context(.light) .token.class-name { color: #6f42c1; }
+    
+    :host-context(.light) .token.regex,
+    :host-context(.light) .token.important,
+    :host-context(.light) .token.variable { color: #e36209; }
+    
+    /* Dark theme */
+    :host-context(.dark) .token.comment,
+    :host-context(.dark) .token.prolog,
+    :host-context(.dark) .token.doctype,
+    :host-context(.dark) .token.cdata { color: #8b949e; }
+    
+    :host-context(.dark) .token.punctuation { color: #c9d1d9; }
+    
+    :host-context(.dark) .token.property,
+    :host-context(.dark) .token.tag,
+    :host-context(.dark) .token.boolean,
+    :host-context(.dark) .token.number,
+    :host-context(.dark) .token.constant,
+    :host-context(.dark) .token.symbol { color: #79c0ff; }
+    
+    :host-context(.dark) .token.selector,
+    :host-context(.dark) .token.attr-name,
+    :host-context(.dark) .token.string,
+    :host-context(.dark) .token.char,
+    :host-context(.dark) .token.builtin { color: #a5d6ff; }
+    
+    :host-context(.dark) .token.operator,
+    :host-context(.dark) .token.entity,
+    :host-context(.dark) .token.url,
+    :host-context(.dark) .language-css .token.string,
+    :host-context(.dark) .style .token.string { color: #ff7b72; }
+    
+    :host-context(.dark) .token.atrule,
+    :host-context(.dark) .token.attr-value,
+    :host-context(.dark) .token.keyword { color: #ff7b72; }
+    
+    :host-context(.dark) .token.function,
+    :host-context(.dark) .token.class-name { color: #d2a8ff; }
+    
+    :host-context(.dark) .token.regex,
+    :host-context(.dark) .token.important,
+    :host-context(.dark) .token.variable { color: #ffa657; }
+    
+    /* User role - override colors */
+    :host([role="user"]) .token.comment { color: #aaaaaa; }
+    :host([role="user"]) .token.string { color: #a8e6cf; }
+    :host([role="user"]) .token.number { color: #88d8b0; }
+    :host([role="user"]) .token.keyword { color: #ff8b94; }
+    :host([role="user"]) .token.function { color: #d4a5ff; }
+    :host([role="user"]) .token.operator { color: #ffccbc; }
     
     .line-numbers {
       display: table;
@@ -197,59 +265,24 @@ export class RxMessageCode extends LitElement {
   }
 
   _highlightCode(code, lang) {
-    let highlighted = this._escapeHtml(code);
-    
-    const patterns = {
-      comment: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|<!--[\s\S]*?-->)/g,
-      string: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g,
-      number: /\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g,
-      keyword: /\b(?:function|const|let|var|if|else|for|while|return|import|export|class|interface|type|async|await|try|catch|throw|new|this|typeof|instanceof|switch|case|break|continue|default|in|of|from|as)\b/g,
-      function: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g,
-      operator: /[{}\[\];(),.:+-/*%=<>!&|^~?]/g,
-      tag: /(&lt;\/?[a-zA-Z][a-zA-Z0-9-]*)/g,
-      attr: /\b([a-zA-Z-]+)(?==)/g
+    const languageMap = {
+      'js': 'javascript',
+      'ts': 'typescript',
+      'py': 'python',
+      'sh': 'bash',
+      'shell': 'bash',
+      'yml': 'yaml',
+      'html': 'markup',
+      'xml': 'markup'
     };
     
-    // Simple highlighting - replace in order of priority
-    const tokens = [];
-    let lastIndex = 0;
+    const prismLang = languageMap[lang] || lang || 'plaintext';
     
-    // Find all matches
-    for (const [type, pattern] of Object.entries(patterns)) {
-      pattern.lastIndex = 0;
-      let match;
-      while ((match = pattern.exec(code)) !== null) {
-        tokens.push({
-          type,
-          start: match.index,
-          end: match.index + match[0].length,
-          text: match[0]
-        });
-      }
+    if (Prism.languages[prismLang]) {
+      return Prism.highlight(code, Prism.languages[prismLang], prismLang);
     }
     
-    // Sort by position
-    tokens.sort((a, b) => a.start - b.start);
-    
-    // Remove overlapping tokens
-    const filtered = [];
-    for (const token of tokens) {
-      if (filtered.length === 0 || token.start >= filtered[filtered.length - 1].end) {
-        filtered.push(token);
-      }
-    }
-    
-    // Rebuild with highlighting
-    let result = '';
-    lastIndex = 0;
-    for (const token of filtered) {
-      result += this._escapeHtml(code.slice(lastIndex, token.start));
-      result += `<span class="${token.type}">${this._escapeHtml(token.text)}</span>`;
-      lastIndex = token.end;
-    }
-    result += this._escapeHtml(code.slice(lastIndex));
-    
-    return result || highlighted;
+    return this._escapeHtml(code);
   }
 
   _renderWithLineNumbers(code) {
@@ -260,7 +293,7 @@ export class RxMessageCode extends LitElement {
     return lines.map((line, i) => html`
       <div class="line-row">
         <span class="line-num">${i + 1}</span>
-        <span class="line-content">${highlightedLines[i] || ''}</span>
+        <span class="line-content">${unsafeHTML(highlightedLines[i] || '')}</span>
       </div>
     `);
   }
