@@ -6,6 +6,9 @@
 - [Hosted Agents](./hosted-agents.md) - Built-in agents that run in the server
 - [Connected Agents](./connected-agents.md) - External agents connecting via REST API
 - [Tools](./tools.md) - Tool definitions and tool calls
+- [Evaluators](./evaluators.md) - Reusable processing components
+- [Core Library](./core.md) - Core types and utilities
+- [API Reference](./api.md) - REST API endpoints
 
 ## Reference
 

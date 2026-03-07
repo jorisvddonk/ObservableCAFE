@@ -298,6 +298,89 @@ Lists all knowledgebase entries.
 
 ---
 
+### weather (getWeather)
+
+Fetches current weather and 7-day forecast from Open-Meteo API (free, no API key required).
+
+**Parameters:**
+- `latitude` (number): Latitude of the location (required)
+- `longitude` (number): Longitude of the location (required)
+- `timezone` (string): Timezone (optional, default: "auto")
+
+**Usage:**
+```
+<|tool_call|>{"name":"getWeather","parameters":{"latitude":59.3345,"longitude":18.0632,"timezone":"Europe/Stockholm"}}<|tool_call_end|>
+```
+
+**Returns:**
+- Current temperature, wind speed, weather condition code
+- 7-day forecast with max/min temperatures
+- Weather codes mapped to descriptions
+
+**Example Cities:**
+| City | Latitude | Longitude |
+|------|----------|-----------|
+| Stockholm | 59.3345 | 18.0632 |
+| New York | 40.7128 | -74.0060 |
+| London | 51.5074 | -0.1278 |
+| Tokyo | 35.6762 | 139.6503 |
+| Sydney | -33.8688 | 151.2093 |
+
+---
+
+### git
+
+Executes git commands and returns structured results with syntax highlighting.
+
+**Parameters:**
+- `command` (string): Git command to execute (required)
+- `cwd` (string): Working directory (optional, default: server root)
+
+**Usage:**
+```
+<|tool_call|>{"name":"git","parameters":{"command":"status"}}<|tool_call_end|>
+<|tool_call|>{"name":"git","parameters":{"command":"log --oneline -5"}}<|tool_call_end|>
+<|tool_call|>{"name":"git","parameters":{"command":"diff HEAD~1","cwd":"/path/to/repo"}}<|tool_call_end|>
+```
+
+**Supported Operations:**
+- `status` - Repository status with staged/unstaged changes
+- `log` - Commit history
+- `diff` - File changes with visual diff output
+- `show` - File contents at specific commits
+- `branch` - Branch operations
+
+---
+
+### sheetbot
+
+SheetBot is a distributed task execution system. This tool provides operations for managing tasks.
+
+**Parameters:**
+- `operation` (string): Operation to perform (required)
+- Additional parameters vary by operation
+
+**Operations:**
+
+| Operation | Description |
+|-----------|-------------|
+| `list_sheets` | List all available sheets |
+| `get_sheet` | Get sheet contents by name |
+| `list_tasks` | List all tasks |
+| `get_task` | Get task details by ID |
+| `create_task` | Create a new task |
+| `delete_task` | Delete a task by ID |
+| `list_agents` | List active agents |
+| `list_library` | List script library |
+
+**Usage:**
+```
+<|tool_call|>{"name":"sheetbot","parameters":{"operation":"list_tasks"}}<|tool_call_end|>
+<|tool_call|>{"name":"sheetbot","parameters":{"operation":"create_task","name":"my-task","script":"console.log('hello')","type":"deno"}}<|tool_call_end|>
+```
+
+---
+
 ## Adding New Tools
 
 1. Create a new file in `tools/` implementing a tool class with `name`, `systemPrompt`, and `execute()` method
