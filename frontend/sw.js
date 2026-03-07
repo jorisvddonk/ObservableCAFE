@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rxcafe-v41';
+const CACHE_NAME = 'rxcafe-v43';
 const STATIC_ASSETS = [
   '/',
   '/app.js',
@@ -28,7 +28,8 @@ const STATIC_ASSETS = [
   '/widgets/rx-message-web.js',
   '/widgets/rx-message-tool.js',
   '/widgets/rx-message-system.js',
-  '/widgets/rx-message-visualization.js'
+  '/widgets/rx-message-visualization.js',
+  '/widgets/rx-vega-graph.js'
 ];
 
 function fetchWithTimeout(request, timeout = 5000) {

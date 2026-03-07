@@ -3,7 +3,7 @@ import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 export class RxVegaGraph extends LitElement {
   constructor() {
     super();
-    this._spec = null;
+    this.spec = null;
     this.chunkId = '';
     this.title = 'Vega Graph';
     this._embedLoaded = false;
@@ -14,19 +14,6 @@ export class RxVegaGraph extends LitElement {
     chunkId: { type: String },
     title: { type: String }
   };
-
-  set spec(value) {
-    const oldValue = this._spec;
-    this._spec = value;
-    this.requestUpdate('spec', oldValue);
-    if (value && this._embedLoaded) {
-      this._renderGraph();
-    }
-  }
-
-  get spec() {
-    return this._spec;
-  }
 
   static styles = css`
     :host {
@@ -135,23 +122,27 @@ export class RxVegaGraph extends LitElement {
     try {
       if (!window.vegaEmbed) {
         await new Promise((resolve, reject) => {
-          const vegaScript = document.createElement('script');
-          vegaScript.src = 'https://cdn.jsdelivr.net/npm/vega@5/build/vega.min.js';
-          vegaScript.onload = () => {
-            const vlScript = document.createElement('script');
-            vlScript.src = 'https://cdn.jsdelivr.net/npm/vega-lite@5/build/vega-lite.min.js';
-            vlScript.onload = () => {
-              const embedScript = document.createElement('script');
-              embedScript.src = 'https://cdn.jsdelivr.net/npm/vega-embed@6/build/vega-embed.min.js';
-              embedScript.onload = resolve;
-              embedScript.onerror = reject;
-              document.head.appendChild(embedScript);
-            };
-            vlScript.onerror = reject;
-            document.head.appendChild(vlScript);
-          };
-          vegaScript.onerror = reject;
-          document.head.appendChild(vegaScript);
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/vega@5/build/vega.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/vega-lite@6.4.2/build/vega-lite.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/vega-embed@6/build/vega-embed.min.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
         });
       }
       this._embedLoaded = true;
@@ -174,12 +165,11 @@ export class RxVegaGraph extends LitElement {
 
   async _renderGraph() {
     const container = this.shadowRoot?.querySelector('#vega-container');
-    if (!container || !window.vegaEmbed) return;
+    if (!container || !window.vegaEmbed || !this.spec) return;
 
     try {
       container.innerHTML = '';
-      const embed = window.vegaEmbed;
-      await embed(container, this.spec, {
+      await window.vegaEmbed(container, this.spec, {
         actions: false,
         renderer: 'svg',
         theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default'
