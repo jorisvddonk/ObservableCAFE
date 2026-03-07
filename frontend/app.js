@@ -7,6 +7,8 @@ import { MessagesManager } from './js/messages.js';
 import { SessionsManager } from './js/sessions.js';
 import { UIManager } from './js/ui.js';
 import { DiceUIAdapter } from './js/dice-ui.js';
+import { ChessUIAdapter } from './js/chess-ui.js';
+import { PipelineConfigAdapter } from './js/pipeline-config-adapter.js';
 
 class RXCafeChat {
     constructor() {
@@ -29,6 +31,7 @@ class RXCafeChat {
         this.knownSessions = [];
         this.uiMode = 'chat';
         this.customUIAdapter = null;
+        this.pipelineConfigAdapter = null;
         
         this._pendingUserMsg = null;
         this._lastAssistantEl = null;
@@ -39,6 +42,16 @@ class RXCafeChat {
         this.messagesManager = new MessagesManager(this);
         this.sessionsManager = new SessionsManager(this);
         this.uiManager = new UIManager(this);
+        
+        this.pipelineConfigAdapter = new PipelineConfigAdapter(this);
+        
+        window.addEventListener('error', (e) => {
+            alert(`JavaScript Error: ${e.message}\nFile: ${e.filename}\nLine: ${e.lineno}`);
+        });
+        
+        window.addEventListener('unhandledrejection', (e) => {
+            alert(`Unhandled Promise Error: ${e.reason}`);
+        });
         
         this.init();
     }
@@ -116,6 +129,7 @@ class RXCafeChat {
             'chat': '💬',
             'game-dice': '🎲',
             'game-quiz': '🎯',
+            'pipeline-config': '⚡',
             'voice': '🎤',
             'image': '🖼️'
         };
@@ -851,6 +865,12 @@ class RXCafeChat {
             } else if (mode === 'game-quiz') {
                 this.customUIAdapter = new QuizUIAdapter(this);
                 this.customUIAdapter.init(this.sessionId);
+            } else if (mode === 'game-chess') {
+                this.customUIAdapter = new ChessUIAdapter(this);
+                this.customUIAdapter.init(this.sessionId);
+            } else if (mode === 'pipeline-config') {
+                this.pipelineConfigAdapter.init(this.sessionId);
+                this.pipelineConfigAdapter.show();
             }
             // Future custom UI modes can be added here
         }

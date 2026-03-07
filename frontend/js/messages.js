@@ -14,6 +14,7 @@ import { RxMessageDiff } from '../widgets/rx-message-diff.js';
 import { RxQuickResponses } from '../widgets/rx-quick-responses.js';
 import { RxWeather } from '../widgets/rx-weather.js';
 import { RxVegaGraph } from '../widgets/rx-vega-graph.js';
+import { RxChess } from '../widgets/rx-chess.js';
 
 export class MessagesManager {
     constructor(chat) {
@@ -58,6 +59,12 @@ export class MessagesManager {
         const isVegaGraph = chunk.annotations?.['vega.spec'];
         if (isVegaGraph) {
             this.addVegaGraphMessage(chunk);
+            return;
+        }
+
+        const isChess = chunk.annotations?.['chess.fen'];
+        if (isChess) {
+            this.addChessMessage(chunk);
             return;
         }
 
@@ -278,6 +285,51 @@ export class MessagesManager {
             scrollToBottom(this.chat.messagesEl);
         } catch (e) {
             console.error('[RXCAFE] Failed to render vega graph:', e);
+            this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
+        }
+    }
+
+    addChessMessage(chunk) {
+        this.chat.addRawChunk(chunk);
+
+        try {
+            const fen = chunk.annotations?.['chess.fen'];
+            const turn = chunk.annotations?.['chess.turn'] || 'w';
+            const isCheck = chunk.annotations?.['chess.isCheck'] || false;
+            const gameOver = chunk.annotations?.['chess.gameOver'] || false;
+            const winner = chunk.annotations?.['chess.winner'] || null;
+            const moveHistory = chunk.annotations?.['chess.moveHistory'] || [];
+            const invalidMove = chunk.annotations?.['chess.invalid'] ? chunk.annotations['chess.invalidMove'] || 'Invalid move' : '';
+
+            const existingEl = this.chat.chunkElements.get(chunk.id);
+            if (existingEl) {
+                existingEl.fen = fen;
+                existingEl.currentPlayer = turn === 'w' ? 'white' : 'black';
+                existingEl.isCheck = isCheck;
+                existingEl.gameOver = gameOver;
+                existingEl.winner = winner;
+                existingEl.moveHistory = moveHistory;
+                existingEl.invalidMove = invalidMove;
+                return;
+            }
+
+            const chessEl = document.createElement('rx-chess');
+            this.chat._elCounter++;
+            chessEl.dataset.elId = this.chat._elCounter;
+            chessEl.fen = fen;
+            chessEl.currentPlayer = turn === 'w' ? 'white' : 'black';
+            chessEl.isCheck = isCheck;
+            chessEl.gameOver = gameOver;
+            chessEl.winner = winner;
+            chessEl.moveHistory = moveHistory;
+            chessEl.invalidMove = invalidMove;
+            chessEl.chunkId = chunk.id;
+
+            this.chat.messagesEl.appendChild(chessEl);
+            this.chat.chunkElements.set(chunk.id, chessEl);
+            scrollToBottom(this.chat.messagesEl);
+        } catch (e) {
+            console.error('[RXCAFE] Failed to render chess board:', e);
             this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
         }
     }

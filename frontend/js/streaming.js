@@ -100,7 +100,15 @@ export class StreamingManager {
                     if (chunk.annotations['com.rxcafe.example.sentiment']) {
                         chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                     }
-                    if (chunk.contentType === 'text' && !el.classList?.contains('streaming')) {
+                    if (chunk.annotations?.['chess.fen'] && el.fen !== undefined) {
+                        el.fen = chunk.annotations['chess.fen'];
+                        el.currentPlayer = (chunk.annotations['chess.turn'] || 'w') === 'w' ? 'white' : 'black';
+                        el.isCheck = chunk.annotations['chess.isCheck'] || false;
+                        el.gameOver = chunk.annotations['chess.gameOver'] || false;
+                        el.winner = chunk.annotations['chess.winner'] || null;
+                        el.moveHistory = chunk.annotations['chess.moveHistory'] || [];
+                        el.invalidMove = chunk.annotations['chess.invalid'] ? (chunk.annotations['chess.invalidMove'] || 'Invalid move') : '';
+                    } else if (chunk.contentType === 'text' && !el.classList?.contains('streaming')) {
                         chat.updateMessageContent(el, chunk.content, chunk.annotations);
                         if (chunk.annotations['com.rxcafe.example.sentiment']) {
                             chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
@@ -125,10 +133,11 @@ export class StreamingManager {
             }
 
             const isFromConnectedAgent = chunk.producer?.startsWith('com.observablecafe.connected-agent');
+            const isChess = chunk.annotations?.['chess.fen'];
             const assistantEl = (chat.currentMessageEl?.dataset.pendingAssistant ? chat.currentMessageEl : null) 
                                 || (chat._lastAssistantEl?.dataset.pendingAssistant ? chat._lastAssistantEl : null);
 
-            if (role === 'assistant' && assistantEl && chunk.contentType === 'text' && !isFromConnectedAgent) {
+            if (role === 'assistant' && assistantEl && chunk.contentType === 'text' && !isFromConnectedAgent && !isChess) {
                 console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
                 assistantEl.dataset.chunkId = chunk.id;
                 chat.chunkElements.set(chunk.id, assistantEl);
