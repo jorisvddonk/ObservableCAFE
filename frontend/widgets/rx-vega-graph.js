@@ -1,11 +1,32 @@
 import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
 export class RxVegaGraph extends LitElement {
+  constructor() {
+    super();
+    this._spec = null;
+    this.chunkId = '';
+    this.title = 'Vega Graph';
+    this._embedLoaded = false;
+  }
+
   static properties = {
     spec: { type: Object },
     chunkId: { type: String },
     title: { type: String }
   };
+
+  set spec(value) {
+    const oldValue = this._spec;
+    this._spec = value;
+    this.requestUpdate('spec', oldValue);
+    if (value && this._embedLoaded) {
+      this._renderGraph();
+    }
+  }
+
+  get spec() {
+    return this._spec;
+  }
 
   static styles = css`
     :host {
@@ -97,14 +118,6 @@ export class RxVegaGraph extends LitElement {
     }
   `;
 
-  constructor() {
-    super();
-    this.spec = null;
-    this.chunkId = '';
-    this.title = 'Vega Graph';
-    this._embedLoaded = false;
-  }
-
   connectedCallback() {
     super.connectedCallback();
     if (this._initialData) {
@@ -143,6 +156,11 @@ export class RxVegaGraph extends LitElement {
       }
       this._embedLoaded = true;
       this.requestUpdate();
+      
+      if (this.spec) {
+        await this.updateComplete;
+        this._renderGraph();
+      }
     } catch (e) {
       console.error('[RXCAFE] Failed to load Vega Embed:', e);
     }
