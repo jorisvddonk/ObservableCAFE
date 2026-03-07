@@ -286,17 +286,57 @@ Bun.serve({
       isStreaming = bodyData.stream === true;
     }
 
-    if (!isStreaming && (url.pathname === "/api/generate" || url.pathname === "/api/chat")) {
-      const cloned = response.clone();
-      const text = await cloned.text();
-      try {
-        const json = JSON.parse(text);
-        if (json.response) responseText = json.response;
-        else if (json.message) responseText = json.message.content;
-      } catch {}
-      responseText = responseText || text.slice(0, 200);
-    } else if (isStreaming) {
-      responseText = "[streaming]";
+    if (url.pathname === "/api/generate" || url.pathname === "/api/chat") {
+      if (isStreaming) {
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+        let accumulated = "";
+
+        response.body.pipeTo(new WritableStream({
+          async write(chunk) {
+            await writer.write(chunk);
+            const text = new TextDecoder().decode(chunk);
+            try {
+              for (const line of text.split("\n")) {
+                if (!line.trim()) continue;
+                const json = JSON.parse(line);
+                if (json.response) accumulated += json.response;
+                else if (json.message) accumulated += json.message.content;
+              }
+            } catch {}
+          },
+          async close() {
+            responseText = accumulated || "[streaming]";
+            addRequest({
+              id,
+              time: Date.now(),
+              method: req.method,
+              pathname: url.pathname,
+              bodyData,
+              rawBody: bodyText,
+              status: response.status,
+              latency,
+              responseText,
+            });
+            await writer.close();
+          },
+        }));
+
+        return new Response(readable, {
+          status: response.status,
+          headers: response.headers,
+        });
+      } else {
+        const cloned = response.clone();
+        const text = await cloned.text();
+        try {
+          const json = JSON.parse(text);
+          if (json.response) responseText = json.response;
+          else if (json.message) responseText = json.message.content;
+        } catch {}
+        responseText = responseText || text.slice(0, 200);
+      }
     }
 
     addRequest({
