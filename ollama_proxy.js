@@ -9,6 +9,7 @@ const FIELDS = [
   { key: "name", label: "Name" },
   { key: "stream", label: "Stream" },
   { key: "raw", label: "Raw Body" },
+  { key: "response", label: "Response" },
   { key: "truncate", label: "Truncate", isToggle: true },
 ];
 
@@ -19,6 +20,7 @@ const DETAIL_LEVELS = [
   ["model", "prompt", "messages", "options"],
   ["model", "prompt", "messages", "options", "name", "stream"],
   ["model", "prompt", "messages", "options", "name", "stream", "raw"],
+  ["model", "prompt", "messages", "options", "name", "stream", "raw", "response"],
 ];
 
 const requests = [];
@@ -30,6 +32,8 @@ let menuSelection = 0;
 let menuFields = FIELDS.map((f) => visibleFields.has(f.key));
 let truncate = true;
 let scrollOffset = 0;
+let filterOpen = false;
+let filterText = "";
 
 function render() {
   term.clear();
@@ -155,7 +159,7 @@ function render() {
           });
         }
 
-        if (req.responseText && visibleFields.has("prompt")) {
+        if (req.responseText && visibleFields.has("response")) {
           let resp = req.responseText;
           if (truncate && resp.length > 80 && resp !== "[streaming]") {
             resp = resp.slice(0, 80) + "...";
