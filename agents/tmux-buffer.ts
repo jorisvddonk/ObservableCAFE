@@ -157,7 +157,7 @@ ${content}`;
       }
 
       const combinedSummary = `## Tmux Window Summary (${new Date().toLocaleDateString()})\n\n` + 
-        summaries.join('\n\n');
+        summaries.join('\n\n---\n\n');
 
       session.outputStream.next(createTextChunk(
         combinedSummary,
@@ -169,12 +169,7 @@ ${content}`;
       ));
     };
 
-    // Run immediately on startup, then schedule daily at 09:00
-    performSummarization('startup').then(() => {
-      if (session.callbacks?.onFinish) {
-        session.callbacks.onFinish();
-      }
-    });
+    // Schedule daily at 09:00
     session.schedule('0 9 * * *', () => {
       performSummarization('scheduled-task').then(() => {
         if (session.callbacks?.onFinish) {
