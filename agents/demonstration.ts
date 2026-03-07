@@ -383,41 +383,77 @@ console.log(greet("World"));`,
   },
   {
     delay: 16500,
-    generate: () => {
-      const vegaSpec = {
-        "$schema": "https://vega.github.io/schema/vega-lite/v6.4.2.json",
-        "description": "Sample pie chart",
-        "data": {
-          "values": [
-            { "category": "One", "value": 4 },
-            { "category": "Two", "value": 6 },
-            { "category": "Three", "value": 10 },
-            { "category": "Four", "value": 3 },
-            { "category": "Five", "value": 7 }
-          ]
-        },
-        "mark": "arc",
-        "encoding": {
-          "theta": { "field": "value", "type": "quantitative" },
-          "color": { "field": "category", "type": "nominal" }
-        }
-      };
-      return createTextChunk(
-        'And a pie chart:',
-        'demonstration',
-        {
-          'chat.role': 'assistant',
-          'vega.spec': vegaSpec,
-          'vega.title': 'Pie Chart Demo',
-          'parsers.markdown.enabled': true
-        }
-      );
-    }
+    generate: () => createTextChunk(
+      '♟️ **Chess Board Widget**\n\nInteractive chess board with move validation:',
+      'demonstration',
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
+    )
   },
   {
-    delay: 17100,
+    delay: 16900,
     generate: () => createTextChunk(
-      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Files (binary)\n• Weather widget\n• Vega graphs (bar & pie charts)\n\nThanks for watching! 🎉',
+      'Current position - White to move:',
+      'demonstration',
+      {
+        'chat.role': 'assistant',
+        'chess.fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3',
+        'chess.turn': 'w',
+        'chess.isCheck': false,
+        'chess.gameOver': false,
+        'chess.winner': null,
+        'chess.moveHistory': [],
+        'parsers.markdown.enabled': true
+      }
+    )
+  },
+  {
+    delay: 17500,
+    generate: () => createTextChunk(
+      'After a sample game move (1. e4 e5 2. Nf3):',
+      'demonstration',
+      {
+        'chat.role': 'assistant',
+        'chess.fen': 'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 4 3',
+        'chess.turn': 'b',
+        'chess.isCheck': false,
+        'chess.gameOver': false,
+        'chess.winner': null,
+        'chess.moveHistory': ['e4', 'e5', 'Nf3'],
+        'parsers.markdown.enabled': true
+      }
+    )
+  },
+  {
+    delay: 18100,
+    generate: () => createTextChunk(
+      '⚠️ **Invalid Move Demo**\n\nWhen you make an invalid move:',
+      'demonstration',
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
+    )
+  },
+  {
+    delay: 18500,
+    generate: () => createTextChunk(
+      'Invalid move: "e5e6". Try: e5, c5, d5',
+      'demonstration',
+      {
+        'chat.role': 'assistant',
+        'chess.fen': 'r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 4 3',
+        'chess.turn': 'b',
+        'chess.isCheck': false,
+        'chess.gameOver': false,
+        'chess.winner': null,
+        'chess.moveHistory': ['e4', 'e5', 'Nf3'],
+        'chess.invalid': true,
+        'chess.invalidMove': 'Invalid move: "e5e6". Try: e5, c5, d5',
+        'parsers.markdown.enabled': true
+      }
+    )
+  },
+  {
+    delay: 19100,
+    generate: () => createTextChunk(
+      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Files (binary)\n• Weather widget\n• Vega graphs (bar & pie charts)\n• Chess board widget\n\nThanks for watching! 🎉',
       'demonstration',
       { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Restart Demo'], 'parsers.markdown.enabled': true }
     )
