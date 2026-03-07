@@ -347,7 +347,7 @@ console.log(greet("World"));`,
     delay: 15900,
     generate: () => {
       const vegaSpec = {
-        "$schema": "https://vega.github.io/schema/vega-lite/v5.22.1",
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.4.2.json",
         "description": "Sample bar chart",
         "data": {
           "values": [
@@ -385,7 +385,7 @@ console.log(greet("World"));`,
     delay: 16500,
     generate: () => {
       const vegaSpec = {
-        "$schema": "https://vega.github.io/schema/vega-lite/v5.22.1",
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.4.2.json",
         "description": "Sample pie chart",
         "data": {
           "values": [
