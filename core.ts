@@ -317,19 +317,32 @@ export async function createSession(
   
   merge(
     inputStream.pipe(
-      filter(chunk => {
-        const role = chunk.annotations['chat.role'];
-        const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url'];
-        const isSessionName = !!chunk.annotations['session.name'];
-        const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime';
-        const isBinary = chunk.contentType === 'binary'; // Allow all binary chunks
-        return isBinary || ((chunk.contentType === 'text' || chunk.contentType === 'null') && 
+      filter((chunk: any) => {
+        if (!chunk || typeof chunk !== 'object') {
+          console.log('[Core] FILTER0: Rejecting non-object in inputStream');
+          return false;
+        }
+        const chunkType = chunk?.constructor?.name || 'unknown';
+        if (chunkType.includes('Subject')) {
+          console.log('[Core] FILTER0: Rejecting Subject in inputStream, type:', chunkType);
+          return false;
+        }
+        const role = chunk.annotations?.['chat.role'];
+        const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
+        const isSessionName = !!chunk.annotations?.['session.name'];
+        const isRuntimeConfig = chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime';
+        const isBinary = chunk.contentType === 'binary';
+        return isBinary || ((chunk.contentType === 'text' || chunk.contentType === 'null') &&
                (role === 'user' || role === 'system' || isWeb || isSessionName || isRuntimeConfig));
       }),
-      tap(chunk => outputStream.next(chunk))
+      tap(chunk => {
+        console.log('[Core] INPUT→OUTPUT: emitting chunk, type=', typeof chunk, chunk?.constructor?.name);
+        outputStream.next(chunk);
+      })
     ),
     outputStream.pipe(
       tap(chunk => {
+        console.log('[Core] OUTPUT→HISTORY: receiving chunk, type=', typeof chunk, chunk?.constructor?.name, chunk?.constructor?.name?.includes('Subject') ? '← SUBJECT!' : '');
         // Check for session naming annotation
         if (chunk.annotations?.['session.name']) {
           session.displayName = String(chunk.annotations['session.name']);
@@ -338,8 +351,10 @@ export async function createSession(
         
         // Check for runtime config chunk
         if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
-          session.runtimeConfig = extractRuntimeConfigFromChunk(chunk);
-          console.log(`[Core] Session ${session.id} runtime config updated:`, session.runtimeConfig);
+          const newConfig = extractRuntimeConfigFromChunk(chunk);
+          console.log(`[Core] Session ${session.id} runtime config BEFORE:`, session.runtimeConfig);
+          console.log(`[Core] Session ${session.id} runtime config AFTER (from chunk):`, newConfig);
+          session.runtimeConfig = newConfig;
           
           if (session.runtimeConfig.backend) session.backend = session.runtimeConfig.backend;
           if (session.runtimeConfig.model) session.model = session.runtimeConfig.model;
@@ -354,12 +369,22 @@ export async function createSession(
         }
         
         // Update history
+        const chunkType = chunk?.constructor?.name || '';
+        if (chunkType.includes('Subject')) {
+          console.log('[Core] HISTORY_FILTER: Rejecting Subject:', chunkType);
+          return;
+        }
         const existingIndex = session.history.findIndex(c => c.id === chunk.id);
         if (existingIndex !== -1) {
           session.history[existingIndex] = chunk;
         } else {
-          session.history.push(chunk);
-          historyTrigger.next();
+          if (!chunk || !chunk.id || !chunk.contentType) {
+            console.error(`[Core] Invalid chunk being added to history:`, chunk);
+            console.error(`[Core] Stack trace:`, new Error().stack);
+          } else {
+            session.history.push(chunk);
+            historyTrigger.next();
+          }
         }
       })
     )
@@ -452,6 +477,7 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     trustedChunks: session.trustedChunks,
     get callbacks() { return session.callbacks; },
     set callbacks(val) { session.callbacks = val; },
+    get runtimeConfig() { return session.runtimeConfig; },
     
     createLLMChunkEvaluator: (backendOrParams?: LLMBackend | LLMParams, model?: string, params?: LLMParams): AgentEvaluator => {
       let b: LLMBackend;
