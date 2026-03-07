@@ -3,7 +3,7 @@ import { createTextChunk } from '../lib/chunk.js';
 
 export const timeTickerAgent: AgentDefinition = {
   name: 'time-ticker',
-  description: 'Background agent that outputs the current time every 2 seconds',
+  description: 'Background agent that outputs the current time every hour',
   startInBackground: true,
   persistsState: false,
   configSchema: {
@@ -28,7 +28,7 @@ export const timeTickerAgent: AgentDefinition = {
     
     emitTime();
     
-    const intervalId = setInterval(emitTime, 2000);
+    const intervalId = setInterval(emitTime, 3600000);
     
     session.pipelineSubscription = {
       unsubscribe: () => {
