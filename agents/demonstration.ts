@@ -338,7 +338,86 @@ console.log(greet("World"));`,
   {
     delay: 15500,
     generate: () => createTextChunk(
-      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Files (binary)\n• Weather widget\n\nThanks for watching! 🎉',
+      '📈 **Vega Graphs**\n\n usingInteractive charts Vega-Lite:',
+      'demonstration',
+      { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
+    )
+  },
+  {
+    delay: 15900,
+    generate: () => {
+      const vegaSpec = {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.22.1",
+        "description": "Sample bar chart",
+        "data": {
+          "values": [
+            { "category": "A", "value": 28 },
+            { "category": "B", "value": 55 },
+            { "category": "C", "value": 43 },
+            { "category": "D", "value": 91 },
+            { "category": "E", "value": 81 },
+            { "category": "F", "value": 53 },
+            { "category": "G", "value": 19 },
+            { "category": "H", "value": 87 },
+            { "category": "I", "value": 52 }
+          ]
+        },
+        "mark": "bar",
+        "encoding": {
+          "x": { "field": "category", "type": "ordinal", "axis": { "labelAngle": 0 } },
+          "y": { "field": "value", "type": "quantitative" },
+          "color": { "field": "category", "legend": null }
+        }
+      };
+      return createTextChunk(
+        'Sample bar chart showing various categories:',
+        'demonstration',
+        {
+          'chat.role': 'assistant',
+          'vega.spec': vegaSpec,
+          'vega.title': 'Bar Chart Demo',
+          'parsers.markdown.enabled': true
+        }
+      );
+    }
+  },
+  {
+    delay: 16500,
+    generate: () => {
+      const vegaSpec = {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.22.1",
+        "description": "Sample pie chart",
+        "data": {
+          "values": [
+            { "category": "One", "value": 4 },
+            { "category": "Two", "value": 6 },
+            { "category": "Three", "value": 10 },
+            { "category": "Four", "value": 3 },
+            { "category": "Five", "value": 7 }
+          ]
+        },
+        "mark": "arc",
+        "encoding": {
+          "theta": { "field": "value", "type": "quantitative" },
+          "color": { "field": "category", "type": "nominal" }
+        }
+      };
+      return createTextChunk(
+        'And a pie chart:',
+        'demonstration',
+        {
+          'chat.role': 'assistant',
+          'vega.spec': vegaSpec,
+          'vega.title': 'Pie Chart Demo',
+          'parsers.markdown.enabled': true
+        }
+      );
+    }
+  },
+  {
+    delay: 17100,
+    generate: () => createTextChunk(
+      '✨ **That\'s All!**\n\nThis demo covered:\n• Text messages\n• Code blocks with syntax highlighting\n• Diff views\n• Dice rolls\n• Tool calls\n• Web content\n• Quick response buttons\n• System prompts\n• Pipeline visualization (Rx marbles)\n• Sentiment analysis\n• Images (binary)\n• Audio (binary)\n• Files (binary)\n• Weather widget\n• Vega graphs (bar & pie charts)\n\nThanks for watching! 🎉',
       'demonstration',
       { 'chat.role': 'assistant', 'com.rxcafe.quickResponses': ['Restart Demo'], 'parsers.markdown.enabled': true }
     )

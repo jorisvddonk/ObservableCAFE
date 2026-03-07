@@ -4,6 +4,7 @@ import { scrollToBottom } from './dom-utils.js';
 import { RxMessageText } from '../widgets/rx-message-text.js';
 import { RxMessageImage } from '../widgets/rx-message-image.js';
 import { RxMessageAudio } from '../widgets/rx-message-audio.js';
+import { RxMessageFile } from '../widgets/rx-message-file.js';
 import { RxMessageWeb } from '../widgets/rx-message-web.js';
 import { RxMessageTool } from '../widgets/rx-message-tool.js';
 import { RxMessageSystem } from '../widgets/rx-message-system.js';
@@ -12,6 +13,7 @@ import { RxMessageCode } from '../widgets/rx-message-code.js';
 import { RxMessageDiff } from '../widgets/rx-message-diff.js';
 import { RxQuickResponses } from '../widgets/rx-quick-responses.js';
 import { RxWeather } from '../widgets/rx-weather.js';
+import { RxVegaGraph } from '../widgets/rx-vega-graph.js';
 
 export class MessagesManager {
     constructor(chat) {
@@ -53,6 +55,12 @@ export class MessagesManager {
             return;
         }
 
+        const isVegaGraph = chunk.annotations?.['vega.spec'];
+        if (isVegaGraph) {
+            this.addVegaGraphMessage(chunk);
+            return;
+        }
+
         console.log(`[RXCAFE] renderChunk id=${chunk.id} role=${role} content="${String(chunk.content ?? '').slice(0,60)}"`);
         
         if (chunk.contentType === 'binary') {
@@ -65,7 +73,8 @@ export class MessagesManager {
                 console.log('[RXCAFE] Calling addAudioMessage');
                 this.addAudioMessage(role || 'assistant', chunk);
             } else {
-                console.warn('[RXCAFE] Unsupported binary chunk', chunk);
+                console.log('[RXCAFE] Calling addFileMessage');
+                this.addFileMessage(role || 'assistant', chunk);
             }
             return;
         }
@@ -244,6 +253,35 @@ export class MessagesManager {
         }
     }
 
+    addVegaGraphMessage(chunk) {
+        this.chat.addRawChunk(chunk);
+
+        try {
+            const spec = chunk.annotations?.['vega.spec'];
+            const title = chunk.annotations?.['vega.title'] || 'Vega Graph';
+
+            const vegaEl = document.createElement('rx-vega-graph');
+            this.chat._elCounter++;
+            vegaEl.dataset.elId = this.chat._elCounter;
+            vegaEl._initialData = {
+                chunkId: chunk.id,
+                spec: spec,
+                title: title
+            };
+
+            vegaEl.addEventListener('vega-contextmenu', (e) => {
+                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+            });
+
+            this.chat.messagesEl.appendChild(vegaEl);
+            this.chat.chunkElements.set(chunk.id, vegaEl);
+            scrollToBottom(this.chat.messagesEl);
+        } catch (e) {
+            console.error('[RXCAFE] Failed to render vega graph:', e);
+            this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
+        }
+    }
+
     addWebChunk(chunk) {
         this.chat.addRawChunk(chunk);
         
@@ -346,6 +384,49 @@ export class MessagesManager {
         
         this.chat.messagesEl.appendChild(audioEl);
         this.chat.chunkElements.set(chunk.id, audioEl);
+        scrollToBottom(this.chat.messagesEl);
+    }
+
+    addFileMessage(role, chunk) {
+        if (!chunk.content || !chunk.content.data) {
+            console.error('[RXCAFE] Binary chunk missing data', chunk);
+            return;
+        }
+        const { data, mimeType } = chunk.content;
+        
+        let uint8;
+        if (data instanceof Uint8Array) {
+            uint8 = data;
+        } else if (Array.isArray(data)) {
+            uint8 = new Uint8Array(data);
+        } else if (typeof data === 'object' && data !== null) {
+            if (data.type === 'Buffer' && Array.isArray(data.data)) {
+                uint8 = new Uint8Array(data.data);
+            } else {
+                uint8 = new Uint8Array(Object.values(data));
+            }
+        } else {
+            console.error('[RXCAFE] Invalid binary data format', data);
+            return;
+        }
+
+        const blob = new Blob([uint8], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        
+        const filename = chunk.annotations?.['file.name'] || chunk.annotations?.['document.filename'] || `file.${mimeType.split('/')[1] || 'bin'}`;
+        
+        const fileEl = document.createElement('rx-message-file');
+        this.chat._elCounter++;
+        fileEl.dataset.elId = this.chat._elCounter;
+        fileEl.role = role;
+        fileEl.filename = filename;
+        fileEl.mimeType = mimeType;
+        fileEl.size = blob.size;
+        fileEl.dataUrl = url;
+        fileEl.chunkId = chunk.id;
+        
+        this.chat.messagesEl.appendChild(fileEl);
+        this.chat.chunkElements.set(chunk.id, fileEl);
         scrollToBottom(this.chat.messagesEl);
     }
 
