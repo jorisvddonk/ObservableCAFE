@@ -342,7 +342,6 @@ export async function createSession(
     ),
     outputStream.pipe(
       tap(chunk => {
-        console.log('[Core] OUTPUT→HISTORY: receiving chunk, type=', typeof chunk, chunk?.constructor?.name, chunk?.constructor?.name?.includes('Subject') ? '← SUBJECT!' : '');
         // Check for session naming annotation
         if (chunk.annotations?.['session.name']) {
           session.displayName = String(chunk.annotations['session.name']);
