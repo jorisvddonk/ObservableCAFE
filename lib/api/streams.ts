@@ -1,3 +1,18 @@
+/**
+ * Stream API Handlers
+ * 
+ * SSE (Server-Sent Events) endpoints for real-time streaming:
+ * - GET  /api/session/:id/stream  Stream session output chunks
+ * - GET  /api/session/:id/errors  Stream session errors
+ * - POST /api/system/command      Execute system commands
+ * 
+ * SSE Event Types:
+ * - { type: 'connected', sessionId }    - Connection established
+ * - { type: 'chunk', chunk: {...} }    - New chunk emitted
+ * - { type: 'error', error: '...' }    - Error occurred
+ * - 'close' event                       - Connection closed
+ */
+
 import type { Chunk } from '../chunk.js';
 import { getSession } from '../../core.js';
 

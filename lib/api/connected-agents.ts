@@ -1,3 +1,25 @@
+/**
+ * Connected Agents API Handlers
+ * 
+ * REST endpoints for external agent integration:
+ * - POST   /api/agents/register          Register new external agent
+ * - DELETE /api/agents/:id              Unregister agent
+ * - GET    /api/agents/:id/sessions    List agent's sessions
+ * - POST   /api/agents/:id/subscribe    Subscribe to session (events only)
+ * - POST   /api/agents/:id/unsubscribe  Unsubscribe from session
+ * - POST   /api/agents/:id/join         Join session (can read/produce)
+ * - POST   /api/agents/:id/leave        Leave session
+ * - GET    /api/sessions/:id/agents     List agents in session
+ * - GET    /api/sessions/:id/agent-stream  SSE stream for agent
+ * - POST   /api/sessions/:id/agent-chunk  Send chunk from agent
+ * 
+ * Authentication: Bearer token (sk-agent-*)
+ * 
+ * Modes:
+ * - subscribed: Agent receives join/leave events
+ * - joined: Agent can read session context and produce chunks
+ */
+
 import { getSession } from '../../core.js';
 import { connectedAgentStore } from '../connected-agents.js';
 import type { Chunk } from '../chunk.js';

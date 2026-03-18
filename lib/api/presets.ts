@@ -1,3 +1,18 @@
+/**
+ * Presets API Handlers
+ * 
+ * REST endpoints for agent preset management:
+ * - GET    /api/presets              List all presets
+ * - POST   /api/presets              Create preset
+ * - GET    /api/presets/:name        Get preset details
+ * - PUT    /api/presets/:name        Update preset
+ * - DELETE /api/presets/:name        Delete preset
+ * - POST   /api/presets/:name/start  Create session from preset
+ * 
+ * Presets store reusable agent configurations (agent, backend, model, system prompt)
+ * that can be quickly loaded to create new sessions.
+ */
+
 import type { Database } from '../database.js';
 import type { RuntimeSessionConfig } from '../agent.js';
 import { validateConfigAgainstSchema } from '../agent.js';

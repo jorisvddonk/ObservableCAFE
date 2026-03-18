@@ -1,3 +1,15 @@
+/**
+ * Session API Handlers
+ * 
+ * REST endpoints for session management:
+ * - POST /api/session       Create new session
+ * - GET  /api/sessions      List all sessions (active + persisted)
+ * - DELETE /api/session/:id Delete session
+ * - GET  /api/session/:id/history  Get session history
+ * - POST /api/session/:id/trust     Toggle chunk trust
+ * - POST /api/session/:id/ui-mode   Set UI mode
+ */
+
 import { createNullChunk } from '../chunk.js';
 import {
   getSession,
@@ -16,6 +28,10 @@ import type { SessionStore } from '../session-store.js';
 let config: CoreConfig;
 let sessionStore: SessionStore;
 
+/**
+ * Safely stringify an object, handling circular references.
+ * Used for debug output and error responses.
+ */
 function safeStringify(obj: any): string {
   const seen = new WeakSet();
   return JSON.stringify(obj, (key, value) => {

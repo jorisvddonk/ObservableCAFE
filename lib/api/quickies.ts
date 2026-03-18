@@ -1,3 +1,22 @@
+/**
+ * Quickies API Handlers
+ * 
+ * REST endpoints for quick-start buttons (called "quickies"):
+ * - GET    /api/quickies             List all quickies
+ * - POST   /api/quickies             Create quickie
+ * - GET    /api/quickies/:name       Get quickie details
+ * - PUT    /api/quickies/:name       Update quickie
+ * - DELETE /api/quickies/:name       Delete quickie
+ * - POST   /api/quickies/:name/launch  Launch quickie (creates session with starter chunk)
+ * 
+ * Quickies are user-facing buttons with customizable:
+ * - Emoji icon
+ * - Gradient colors
+ * - Preset configuration
+ * - Starter chunk (pre-filled message)
+ * - Display order
+ */
+
 import type { Database } from '../database.js';
 import type { RuntimeSessionConfig } from '../agent.js';
 import { validateConfigAgainstSchema } from '../agent.js';

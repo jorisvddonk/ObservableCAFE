@@ -1,3 +1,18 @@
+/**
+ * API Handler Registry
+ * 
+ * Central module that imports and re-exports all API handlers.
+ * Handlers are lazy-loaded for faster startup.
+ * 
+ * Modules:
+ * - session.ts      Session CRUD operations
+ * - chat.ts         Chat streaming and messaging
+ * - presets.ts     Agent preset management
+ * - quickies.ts    Quick-access preset commands
+ * - connected-agents.ts  External agent integration
+ * - streams.ts      SSE stream endpoints
+ */
+
 import type { CoreConfig, AddChunkOptions } from '../../core.js';
 import type { Database } from '../../database.js';
 import type { SessionStore } from '../../session-store.js';

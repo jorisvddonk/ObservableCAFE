@@ -1,3 +1,21 @@
+/**
+ * Chat API Handlers
+ * 
+ * REST endpoints for chat interaction:
+ * - POST /api/chat/:sessionId  SSE stream for chat messages
+ * - POST /api/fetch           Fetch web content
+ * - POST /api/session/:id/chunk  Add chunk to session
+ * - POST /api/session/:id/abort  Abort generation
+ * - GET  /api/models           List available models
+ * - GET  /api/agents           List available agents
+ * 
+ * SSE Format:
+ * - { type: 'token', token: '...' }  - LLM token stream
+ * - { type: 'finish' }               - Generation finished
+ * - { type: 'done' }                 - Stream closed
+ * - { type: 'error', error: '...' }  - Error occurred
+ */
+
 import { createNullChunk, createBinaryChunk, type Chunk } from '../chunk.js';
 import {
   getSession,
