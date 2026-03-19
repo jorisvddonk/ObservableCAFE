@@ -1,3 +1,8 @@
+/**
+ * Write File Tool
+ * Writes content to files on the filesystem
+ */
+
 import { writeFile } from 'fs/promises';
 
 export interface WriteFileParameters {

@@ -1,3 +1,10 @@
+/**
+ * Knowledgebase Tools
+ * 
+ * Stores and retrieves information using SQLite FTS5 full-text search.
+ * Tools: write, retrieve, search, list
+ */
+
 import { Database as Sqlite } from 'bun:sqlite';
 import { join } from 'path';
 

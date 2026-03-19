@@ -1,10 +1,26 @@
+/**
+ * Bash Tool
+ * 
+ * Executes shell commands in a child process.
+ * Supports timeout, captures stdout/stderr, and handles process errors.
+ * 
+ * Security Note: This tool runs commands with server privileges.
+ * Access should be restricted via trust levels and API authentication.
+ */
+
 import { execSync, spawn } from 'child_process';
 
+/**
+ * Parameters for bash execution
+ */
 export interface BashParameters {
   command: string;
   timeout?: number;
 }
 
+/**
+ * Result of bash execution
+ */
 export interface BashResult {
   command: string;
   stdout: string;
@@ -13,11 +29,21 @@ export interface BashResult {
   timedOut: boolean;
 }
 
+/**
+ * Executes bash commands in a subprocess.
+ * Captures output and handles timeouts.
+ */
 export class BashTool {
   readonly name = 'bash';
   readonly systemPrompt = BASH_TOOL_SYSTEM_PROMPT;
   private readonly defaultTimeout = 30000;
 
+  /**
+   * Execute a bash command with timeout support.
+   * @param parameters.command - The shell command to execute
+   * @param parameters.timeout - Max execution time in ms (default: 30000)
+   * @returns Object with stdout, stderr, exitCode, and timedOut flag
+   */
   execute(parameters: BashParameters): BashResult {
     const command = parameters.command;
     const timeout = parameters.timeout || this.defaultTimeout;

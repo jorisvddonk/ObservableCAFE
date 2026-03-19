@@ -1,3 +1,10 @@
+/**
+ * Sheetbot Tools
+ * 
+ * Integrates with Sheetbot API for spreadsheet and task management.
+ * Tools: list_sheets, get_sheet, list_tasks, get_task, create_task, delete_task, list_agents, list_library
+ */
+
 import { SheetbotAPI, SheetbotTask, SheetbotTaskCreate, SheetbotAgentTrackerStats, SheetbotLibraryItem, TaskStatusNames } from '../lib/sheetbot-api.js';
 
 export interface SheetbotToolParams {

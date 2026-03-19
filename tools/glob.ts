@@ -1,3 +1,9 @@
+/**
+ * Glob Tool
+ * File pattern matching (e.g., **/*.ts, src/**/*.js)
+ * Supports: *, **, ? wildcards
+ */
+
 import { readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 

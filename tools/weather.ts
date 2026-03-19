@@ -1,3 +1,8 @@
+/**
+ * Weather Tool
+ * Fetches weather data from Open-Meteo API (free, no API key required)
+ */
+
 export interface WeatherParameters {
   latitude: number;
   longitude: number;

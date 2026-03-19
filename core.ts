@@ -311,11 +311,24 @@ export async function createSession(
   };
   
   session._agentContext = agentContext;
-  
-  // Unified stream pipeline: forward input→output, then handle output→history
+
+  // =============================================================================
+  // UNIFIED STREAM PIPELINE
+  // =============================================================================
+  // This is the heart of the session's data flow:
+  // 1. INPUT STREAM → OUTPUT STREAM: Forward user messages and config changes
+  // 2. OUTPUT STREAM → HISTORY: Track all output chunks for persistence
+  // 3. DEBOUNCED PERSISTENCE: Save history to SQLite after 500ms of inactivity
+  // 
+  // The merge() operator allows both streams to flow independently.
+  // The debounceTime(500) prevents excessive database writes during rapid updates.
+
   const historyTrigger = new Subject<void>();
   
   merge(
+    // ===== INPUT → OUTPUT PIPELINE =====
+    // Forward input chunks to output, filtering for valid content types.
+    // Accepts: text chunks with user/system role, web content, session config, or binary
     inputStream.pipe(
       filter((chunk: any) => {
         if (!chunk || typeof chunk !== 'object') {
@@ -327,6 +340,7 @@ export async function createSession(
           console.log('[Core] FILTER0: Rejecting Subject in inputStream, type:', chunkType);
           return false;
         }
+        // Extract role and source information for filtering
         const role = chunk.annotations?.['chat.role'];
         const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
         const isSessionName = !!chunk.annotations?.['session.name'];
@@ -340,25 +354,32 @@ export async function createSession(
         outputStream.next(chunk);
       })
     ),
+    // ===== OUTPUT → HISTORY PIPELINE =====
+    // Track all output chunks, update session state, and persist to history.
     outputStream.pipe(
       tap(chunk => {
-        // Check for session naming annotation
+        // ===== SESSION NAMING =====
+        // Allow chunks to rename the session display name
         if (chunk.annotations?.['session.name']) {
           session.displayName = String(chunk.annotations['session.name']);
           console.log(`[Core] Session ${session.id} renamed to: ${session.displayName}`);
         }
         
-        // Check for runtime config chunk
+        // ===== RUNTIME CONFIGURATION =====
+        // Null chunks with 'config.type: runtime' update session config dynamically.
+        // This allows runtime changes to backend, model, system prompt, and LLM params.
         if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
           const newConfig = extractRuntimeConfigFromChunk(chunk);
           console.log(`[Core] Session ${session.id} runtime config BEFORE:`, session.runtimeConfig);
           console.log(`[Core] Session ${session.id} runtime config AFTER (from chunk):`, newConfig);
           session.runtimeConfig = newConfig;
           
+          // Update session-level settings from runtime config
           if (session.runtimeConfig.backend) session.backend = session.runtimeConfig.backend;
           if (session.runtimeConfig.model) session.model = session.runtimeConfig.model;
           if (session.runtimeConfig.systemPrompt) session.systemPrompt = session.runtimeConfig.systemPrompt;
           
+          // Recreate evaluator with new config
           session.llmEvaluator = createLLMChunkEvaluator(
             session.backend,
             config,
@@ -367,7 +388,9 @@ export async function createSession(
           );
         }
         
-        // Update history
+        // ===== HISTORY MANAGEMENT =====
+        // Update or append chunks to session history.
+        // Filter out any stray Subject objects that might leak into the stream.
         const chunkType = chunk?.constructor?.name || '';
         if (chunkType.includes('Subject')) {
           console.log('[Core] HISTORY_FILTER: Rejecting Subject:', chunkType);
@@ -375,22 +398,25 @@ export async function createSession(
         }
         const existingIndex = session.history.findIndex(c => c.id === chunk.id);
         if (existingIndex !== -1) {
+          // Update existing chunk (e.g., streaming tokens coalesced)
           session.history[existingIndex] = chunk;
         } else {
+          // Validate chunk before adding to history
           if (!chunk || !chunk.id || !chunk.contentType) {
             console.error(`[Core] Invalid chunk being added to history:`, chunk);
             console.error(`[Core] Stack trace:`, new Error().stack);
           } else {
             session.history.push(chunk);
-            historyTrigger.next();
+            historyTrigger.next();  // Signal that history was updated
           }
         }
       })
     )
   ).pipe(
-    debounceTime(500)
+    debounceTime(500)  // Debounce to batch rapid updates into single persist calls
   ).subscribe({
     next: async () => {
+      // Persist session state to SQLite
       if (sessionStore && session.persistsState !== false) {
         try {
           await sessionStore.saveHistory(id, session.history);
@@ -433,6 +459,19 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   return sessions.delete(sessionId);
 }
 
+/**
+ * Reload an agent for an existing session.
+ * 
+ * This enables hot-reloading of agent logic without disrupting active connections:
+ * 1. Unsubscribe from the old agent's pipeline
+ * 2. Call destroy() on the old agent to clean up resources
+ * 3. Reuse existing streams (inputStream, outputStream) to preserve SSE connections
+ * 4. Rebuild the agent context with fresh callbacks
+ * 5. Initialize the new agent
+ * 
+ * The key insight is that we DON'T recreate the streams - only the agent logic changes.
+ * This allows connected clients to continue receiving events while the agent updates.
+ */
 export async function reloadSessionAgent(sessionId: string, config: CoreConfig): Promise<boolean> {
   const session = sessions.get(sessionId);
   if (!session) return false;
@@ -443,12 +482,13 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     return false;
   }
   
-  // Unsubscribe from old pipeline
+  // ===== PHASE 1: TEARDOWN =====
+  // Unsubscribe from old pipeline to stop processing
   if (session.pipelineSubscription) {
     session.pipelineSubscription.unsubscribe();
   }
   
-  // Call destroy on old agent if it exists
+  // Call destroy on old agent to release resources (timers, connections, etc.)
   try {
     const oldAgent = getAgent(session.agentName);
     if (oldAgent?.destroy && session._agentContext) {
@@ -458,10 +498,12 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     console.warn(`[Core] Error calling destroy on old agent for session ${sessionId}:`, err);
   }
   
+  // ===== PHASE 2: STREAM PRESERVATION =====
   // Reuse existing streams - don't create new ones
   // This preserves SSE connections and other subscribers
   
-  // Rebuild agent context with new streams
+  // ===== PHASE 3: CONTEXT REBUILD =====
+  // Create fresh agent context with existing streams and history
   session._agentContext = {
     id: session.id,
     agentName: session.agentName,
@@ -516,7 +558,7 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
     },
   };
   
-  // Initialize with new agent
+  // ===== PHASE 4: INITIALIZE NEW AGENT =====
   await newAgent.initialize(session._agentContext);
   
   console.log(`[Core] Reloaded agent for session ${sessionId} (${session.agentName})`);
@@ -801,30 +843,62 @@ export function createTrustFilter(): Evaluator {
   };
 }
 
+/**
+ * Build conversation context string for LLM prompts.
+ * 
+ * Constructs a formatted string containing:
+ * 1. System prompt (if provided)
+ * 2. Chat history with User/Assistant roles
+ * 3. Web content (marked with source URL)
+ * 
+ * Security filtering: Only includes chunks that are:
+ * - Text content type
+ * - Have a recognized role (user/assistant) or are web content
+ * - Have trust level 'trusted' or no trust level (assumed trusted)
+ * 
+ * The excludeChunkId parameter allows omitting the current input chunk
+ * to prevent duplicate context when generating responses.
+ * 
+ * @param history - Session history array
+ * @param excludeChunkId - Chunk ID to exclude (typically the current input)
+ * @param systemPrompt - Optional system prompt to prepend
+ * @returns Formatted context string for LLM
+ */
 export function buildConversationContext(history: Chunk[], excludeChunkId?: string, systemPrompt?: string | null): string {
   const contextParts: string[] = [];
   
+  // Add system prompt at the top
   if (systemPrompt) {
     contextParts.push(`System: ${systemPrompt}`);
   }
   
+  // Process each chunk in history
   for (const chunk of history) {
+    // Skip the chunk being responded to (avoid duplication)
     if (chunk.id === excludeChunkId) continue;
+    
+    // Only process text chunks
     if (chunk.contentType !== 'text') continue;
     
+    // Extract role and trust information
     const role = chunk.annotations['chat.role'];
     const trustLevel = chunk.annotations['security.trust-level'];
     const isChunkTrusted = !trustLevel || trustLevel.trusted === true;
     
+    // ===== SECURITY: FILTER UNTRUSTED CONTENT =====
+    // Untrusted content (e.g., from untrusted web sources) is excluded
+    // This prevents prompt injection attacks via untrusted content
     if (!isChunkTrusted) continue;
     
     const content = chunk.content as string;
     
+    // Format based on role or source
     if (role === 'user') {
       contextParts.push(`User: ${content}`);
     } else if (role === 'assistant') {
       contextParts.push(`Assistant: ${content}`);
     } else if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url']) {
+      // Web content is marked with its source URL
       const url = chunk.annotations['web.source-url'] || 'unknown';
       contextParts.push(`[Web content from ${url}]: ${content}`);
     }

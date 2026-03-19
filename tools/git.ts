@@ -1,3 +1,8 @@
+/**
+ * Git Tool
+ * Executes git commands via child process
+ */
+
 import { execSync } from 'child_process';
 import { createTextChunk, createNullChunk } from '../lib/chunk.js';
 import type { Chunk } from '../lib/chunk.js';

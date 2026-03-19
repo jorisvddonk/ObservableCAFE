@@ -1,3 +1,8 @@
+/**
+ * List Directory Tool
+ * Lists files and subdirectories with metadata
+ */
+
 import { readdir, stat } from 'fs/promises';
 import { join, basename } from 'path';
 

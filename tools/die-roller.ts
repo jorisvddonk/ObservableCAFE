@@ -1,3 +1,8 @@
+/**
+ * Die Roller Tool
+ * Rolls dice using standard notation (1d6, 2d10+3, 3d8-2)
+ */
+
 export interface DieRollResult {
   rolls: number[];
   total: number;

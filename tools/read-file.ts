@@ -1,3 +1,8 @@
+/**
+ * Read File Tool
+ * Reads file contents from the filesystem
+ */
+
 import { readFile } from 'fs/promises';
 import { stat } from 'fs/promises';
 

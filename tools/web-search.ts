@@ -1,3 +1,10 @@
+/**
+ * Web Search Tool
+ * 
+ * Searches the web using Brave Search or Exa AI APIs.
+ * Set BRAVE_API_KEY or EXA_API_KEY environment variable to enable.
+ */
+
 export interface WebSearchParameters {
   query: string;
   numResults?: number;

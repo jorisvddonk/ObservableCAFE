@@ -1,3 +1,10 @@
+/**
+ * Web Fetch Tool
+ * 
+ * Fetches web pages and extracts text content.
+ * Strips HTML, scripts, and styles for clean text output.
+ */
+
 export interface WebFetchParameters {
   url: string;
   maxLength?: number;

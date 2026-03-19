@@ -1,3 +1,8 @@
+/**
+ * Update File Tool
+ * Write, append, or search-replace in files
+ */
+
 import { readFile, writeFile } from 'fs/promises';
 
 export interface UpdateFileParameters {
