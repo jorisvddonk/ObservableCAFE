@@ -45,6 +45,7 @@ import {
 import { Subject, Observable, merge, EMPTY, from, filter, map, mergeMap, catchError, tap, debounceTime } from './lib/stream.js';
 import { KoboldEvaluator } from './lib/kobold-api.js';
 import { OllamaEvaluator } from './lib/ollama-api.js';
+import { LlamaCppEvaluator } from './lib/llamacpp-api.js';
 import { 
   type AgentDefinition, 
   type AgentSessionContext, 
@@ -63,13 +64,15 @@ import { schedule, clearAllScheduledJobs } from './lib/scheduler.js';
 // Configuration
 // =============================================================================
 
-export type LLMBackend = 'kobold' | 'ollama';
+export type LLMBackend = 'kobold' | 'ollama' | 'llamacpp';
 
 export interface CoreConfig {
   backend: LLMBackend;
   koboldBaseUrl: string;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  llamacppBaseUrl: string;
+  llamacppModel: string;
   tracing: boolean;
   sessionStore?: SessionStore;
 }
@@ -80,6 +83,8 @@ export function getDefaultConfig(): CoreConfig {
     koboldBaseUrl: process.env.KOBOLD_URL || 'http://localhost:5001',
     ollamaBaseUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'gemma3:1b',
+    llamacppBaseUrl: process.env.LLAMACPP_URL || 'http://localhost:8080',
+    llamacppModel: process.env.LLAMACPP_MODEL || 'model.gguf',
     tracing: process.env.RXCAFE_TRACE === '1'
   };
 }
@@ -103,6 +108,12 @@ export function createLLMChunkEvaluator(
     const ollama = new OllamaEvaluator(config.ollamaBaseUrl, model || config.ollamaModel, '', llmParams);
     return {
       evaluateChunk: ollama.evaluateChunk.bind(ollama),
+      abort: async () => {}
+    };
+  } else if (backend === 'llamacpp') {
+    const llamacpp = new LlamaCppEvaluator(config.llamacppBaseUrl, model || config.llamacppModel, '', llmParams);
+    return {
+      evaluateChunk: llamacpp.evaluateChunk.bind(llamacpp),
       abort: async () => {}
     };
   } else {
@@ -919,6 +930,11 @@ export async function listModels(config: CoreConfig, backend?: string): Promise<
     const api = new OllamaAPI(config.ollamaBaseUrl);
     const models = await api.listModels();
     return { models, backend: 'ollama' };
+  } else if (targetBackend === 'llamacpp') {
+    const { LlamaCppAPI } = await import('./lib/llamacpp-api.js');
+    const api = new LlamaCppAPI(config.llamacppBaseUrl, config.llamacppModel);
+    const models = await api.listModels();
+    return { models, backend: 'llamacpp' };
   } else {
     return { 
       models: [],

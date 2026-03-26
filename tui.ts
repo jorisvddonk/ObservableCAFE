@@ -445,7 +445,7 @@ class ChatApp implements Component, Focusable {
     ];
     
     if (properties.backend) {
-      steps.push({ title: 'Backend', field: 'backend', options: ['ollama', 'kobold'], inputType: 'select' });
+      steps.push({ title: 'Backend', field: 'backend', options: ['ollama', 'kobold', 'llamacpp'], inputType: 'select' });
     }
     if (properties.model) {
       steps.push({ title: 'Model', field: 'model' });

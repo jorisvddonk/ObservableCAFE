@@ -85,6 +85,8 @@ console.log(`Backend: ${config.backend}`);
 console.log(`KoboldCPP URL: ${config.koboldBaseUrl}`);
 console.log(`Ollama URL: ${config.ollamaBaseUrl}`);
 console.log(`Ollama Model: ${config.ollamaModel}`);
+console.log(`LlamaCpp URL: ${config.llamacppBaseUrl}`);
+console.log(`LlamaCpp Model: ${config.llamacppModel}`);
 console.log(`Port: ${PORT}`);
 console.log(`Tracing: ${config.tracing ? 'ENABLED' : 'disabled'}`);
 console.log(`Telegram: ${TELEGRAM_TOKEN ? 'ENABLED' : 'disabled'}`);
@@ -261,6 +263,8 @@ const server = serve({
         koboldUrl: config.koboldBaseUrl,
         ollamaUrl: config.ollamaBaseUrl,
         ollamaModel: config.ollamaModel,
+        llamacppUrl: config.llamacppBaseUrl,
+        llamacppModel: config.llamacppModel,
         authRequired: true,
         trustedClients: trustDb.getClientCount()
       }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });

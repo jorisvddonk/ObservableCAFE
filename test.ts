@@ -98,7 +98,7 @@ class TestRunner {
   static async create(options: TestOptions): Promise<TestRunner> {
     const config = getDefaultConfig();
     if (options.backend) {
-      config.backend = options.backend as 'ollama' | 'kobold';
+      config.backend = options.backend as 'ollama' | 'kobold' | 'llamacpp';
     }
     
     await loadAgentsFromDisk();

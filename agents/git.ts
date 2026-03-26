@@ -15,7 +15,7 @@ export const gitAgent: AgentDefinition = {
   configSchema: {
     type: 'object',
     properties: {
-      backend: { type: 'string', description: 'LLM backend (kobold or ollama)' },
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)' },
       model: { type: 'string', description: 'Model name' },
       cwd: { type: 'string', description: 'Working directory for git operations' }
     },

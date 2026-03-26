@@ -62,7 +62,9 @@ Environment Variables:
   KOBOLD_URL                 KoboldCPP base URL
   OLLAMA_URL                 Ollama base URL
   OLLAMA_MODEL               Ollama model name
-  BACKEND                    Default backend (kobold or ollama)
+  LLAMACPP_URL               LlamaCpp server base URL
+  LLAMACPP_MODEL             LlamaCpp model name
+  BACKEND                    Default backend (kobold, ollama, or llamacpp)
 `);
   process.exit(0);
 }

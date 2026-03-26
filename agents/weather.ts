@@ -20,7 +20,7 @@ export const weatherAgent: AgentDefinition = {
   configSchema: {
     type: 'object',
     properties: {
-      backend: { type: 'string', description: 'LLM backend (kobold or ollama)', default: 'ollama' },
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)', default: 'ollama' },
       model: { type: 'string', description: 'Model name' },
       systemPrompt: { type: 'string', description: 'System prompt' },
       llmParams: {

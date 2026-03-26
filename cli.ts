@@ -32,7 +32,7 @@ async function main() {
   const config: CoreConfig = getDefaultConfig();
 
   if (cliOptions.backend) {
-    config.backend = cliOptions.backend as 'kobold' | 'ollama';
+    config.backend = cliOptions.backend as 'kobold' | 'ollama' | 'llamacpp';
   }
 
   await loadAgentsFromDisk();

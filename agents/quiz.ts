@@ -74,7 +74,7 @@ export const quizAgent: AgentDefinition = {
   configSchema: {
     type: 'object',
     properties: {
-      backend: { type: 'string', description: 'LLM backend (kobold or ollama)', default: 'ollama' },
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)', default: 'ollama' },
       model: { type: 'string', description: 'Model name' },
       questionCount: { type: 'number', description: 'Number of questions per quiz', default: 5 }
     },

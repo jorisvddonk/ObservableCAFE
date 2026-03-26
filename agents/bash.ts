@@ -11,7 +11,7 @@ export const bashAgent: AgentDefinition = {
   configSchema: {
     type: 'object',
     properties: {
-      backend: { type: 'string', description: 'LLM backend (kobold or ollama)' },
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)' },
       model: { type: 'string', description: 'Model name' },
     },
     required: ['backend', 'model']

@@ -69,7 +69,7 @@ export const sheetbotTaskCreatorAgent: AgentDefinition = {
       baseUrl: { type: 'string', description: 'SheetBot server URL (default: from SHEETBOT_BASEURL env or http://localhost:3000)' },
       apiKey: { type: 'string', description: 'API key for authentication (default: from SHEETBOT_AUTH_APIKEY env)' },
       token: { type: 'string', description: 'JWT token for authentication (optional, will be obtained via login if apiKey provided)' },
-      backend: { type: 'string', description: 'LLM backend (kobold or ollama)', default: 'ollama' },
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)', default: 'ollama' },
       model: { type: 'string', description: 'Model name' },
       systemPrompt: { type: 'string', description: 'System prompt override' },
       llmParams: {
