@@ -26,11 +26,9 @@ export interface CreateChunkOptions {
   annotations?: Record<string, any>;
 }
 
-let idCounter = 0;
-
 export function createChunk(options: CreateChunkOptions): Chunk {
   return {
-    id: `chunk-${Date.now()}-${++idCounter}`,
+    id: crypto.randomUUID(),
     timestamp: Date.now(),
     contentType: options.contentType,
     content: options.content,
