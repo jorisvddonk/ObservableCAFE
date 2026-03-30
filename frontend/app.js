@@ -279,16 +279,8 @@ class RXCafeChat {
         this.messageInput.focus();
         
         this.isGenerating = true;
+        this._streamingEl = null;
         await this.updateUIState();
-        
-        this.currentMessageEl = this.createMessageElement('assistant', '');
-        this.currentMessageEl.classList.add('streaming');
-        this.currentMessageEl.dataset.pendingAssistant = 'true';
-        this.currentMessageEl.pending = true;
-        this.currentContent = '';
-        
-        this.messagesEl.appendChild(this.currentMessageEl);
-        this.scrollToBottom();
 
         try {
             const response = await fetch(this.apiUrl(`/api/chat/${this.sessionId}`), {
@@ -300,10 +292,6 @@ class RXCafeChat {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-            
-            if (this.currentMessageEl.tagName === 'RX-MESSAGE-TEXT') {
-                this.currentMessageEl.pending = false;
-            }
             
             while (true) {
                 const { done, value } = await reader.read();
@@ -327,25 +315,16 @@ class RXCafeChat {
             }
         } catch (error) {
             console.error('Streaming error:', error);
-            this.showErrorInMessage(this.currentMessageEl, 'Failed to get response. Check if the LLM server is running.');
+            if (this.currentMessageEl) {
+                this.showErrorInMessage(this.currentMessageEl, 'Failed to get response. Check if the LLM server is running.');
+            }
         } finally {
             this.isGenerating = false;
             if (this.currentMessageEl) {
                 this.currentMessageEl.classList.remove('streaming');
-                
-                if (this.currentMessageEl.dataset.pendingAssistant) {
-                    this._lastAssistantEl = this.currentMessageEl;
-                    
-                    const el = this.currentMessageEl;
-                    setTimeout(() => {
-                        if (el.parentElement && el.dataset.pendingAssistant && !el.dataset.chunkId) {
-                            console.log('[RXCAFE] Removing unclaimed empty assistant bubble');
-                            el.remove();
-                        }
-                    }, 5000);
-                }
             }
             this.currentMessageEl = null;
+            this._streamingEl = null;
             this.currentContent = '';
             await this.updateUIState();
             this.messageInput.focus();

@@ -134,18 +134,71 @@ export class StreamingManager {
 
             const isFromConnectedAgent = chunk.producer?.startsWith('com.observablecafe.connected-agent');
             const isChess = chunk.annotations?.['chess.fen'];
-            const assistantEl = (chat.currentMessageEl?.dataset.pendingAssistant ? chat.currentMessageEl : null) 
-                                || (chat._lastAssistantEl?.dataset.pendingAssistant ? chat._lastAssistantEl : null);
+            const isAssistantText = role === 'assistant' && chunk.contentType === 'text' && !isFromConnectedAgent && !isChess;
 
-            if (role === 'assistant' && assistantEl && chunk.contentType === 'text' && !isFromConnectedAgent && !isChess) {
-                console.log(`[RXCAFE] SSE assistant chunk claimed by element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
+            console.log('[RXCAFE] handleChunk: role=', role, 'contentType=', chunk.contentType, 'currentMessageEl=', chat.currentMessageEl?.dataset?.elId, '_streamingEl=', chat._streamingEl?.dataset?.elId);
+
+            if (isAssistantText) {
+                let assistantEl = chat.currentMessageEl;
+                
+                // Look for an existing streaming element that might have the same content
+                if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT' || assistantEl.role !== 'assistant') {
+                    const existingStreaming = chat.messagesEl?.querySelector?.('.streaming[role="assistant"]');
+                    if (existingStreaming) {
+                        console.log('[RXCAFE] handleChunk: reusing existing streaming element:', existingStreaming.dataset.elId);
+                        assistantEl = existingStreaming;
+                        chat.currentMessageEl = assistantEl;
+                    }
+                }
+                
+                // If still no element, look for the last assistant message element
+                // This handles the case where HTTP streaming finished and removed the streaming class
+                // before the SSE chunk arrived with the final content
+                if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT' || assistantEl.role !== 'assistant') {
+                    const allMessages = chat.messagesEl?.querySelectorAll?.('rx-message-text[role="assistant"]');
+                    if (allMessages && allMessages.length > 0) {
+                        const lastAssistantEl = allMessages[allMessages.length - 1];
+                        // Check if this element was just created (has no chunkId yet or was streaming)
+                        if (!lastAssistantEl.dataset.chunkId || lastAssistantEl.classList.contains('streaming')) {
+                            console.log('[RXCAFE] handleChunk: reusing last assistant element:', lastAssistantEl.dataset.elId);
+                            assistantEl = lastAssistantEl;
+                            chat.currentMessageEl = assistantEl;
+                        }
+                    }
+                }
+                
+                console.log('[RXCAFE] isAssistantText check: assistantEl=', assistantEl?.dataset?.elId, 'role=', assistantEl?.role, '_streamingEl=', chat._streamingEl?.dataset?.elId);
+                
+                if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT' || assistantEl.role !== 'assistant') {
+                    console.log('[RXCAFE] Creating NEW assistant element, _streamingEl was:', chat._streamingEl?.dataset?.elId);
+                    if (chat._streamingEl && chat._streamingEl.parentElement) {
+                        console.log('[RXCAFE] Removing old _streamingEl:', chat._streamingEl.dataset.elId);
+                        chat._streamingEl.remove();
+                    }
+                    assistantEl = chat.createMessageElement('assistant', '');
+                    assistantEl.classList.add('streaming');
+                    chat.messagesEl.appendChild(assistantEl);
+                    chat._streamingEl = null;
+                    chat.scrollToBottom();
+                } else {
+                    console.log('[RXCAFE] REUSING assistant element:', assistantEl.dataset.elId);
+                    if (chat._streamingEl && chat._streamingEl !== assistantEl) {
+                        console.log('[RXCAFE] Removing orphan _streamingEl:', chat._streamingEl.dataset.elId);
+                        chat._streamingEl.remove();
+                    }
+                    chat._streamingEl = null;
+                }
+                
+                // Remove streaming class to mark this as a finalized chunk
+                assistantEl.classList.remove('streaming');
+                
+                chat.currentMessageEl = assistantEl;
+                console.log(`[RXCAFE] SSE assistant chunk rendered in element elId=${assistantEl.dataset.elId}, registering id:`, chunk.id);
                 assistantEl.dataset.chunkId = chunk.id;
                 chat.chunkElements.set(chunk.id, assistantEl);
                 assistantEl.dataset.annotations = JSON.stringify(chunk.annotations || {});
                 chat.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
                 chat.messagesManager.addQuickResponses(assistantEl, chunk);
-                delete assistantEl.dataset.pendingAssistant;
-                if (assistantEl === chat._lastAssistantEl) chat._lastAssistantEl = null;
                 chat.addRawChunk(chunk);
                 chat.updateInspector();
                 return;
@@ -170,6 +223,18 @@ export class StreamingManager {
             case 'token':
                 if (data.token) {
                     chat.currentContent += data.token;
+                    
+                    if (!chat.currentMessageEl || chat.currentMessageEl.tagName !== 'RX-MESSAGE-TEXT') {
+                        console.log('[RXCAFE] TOKEN: Creating streaming element');
+                        chat.currentMessageEl = chat.createMessageElement('assistant', '');
+                        chat.currentMessageEl.classList.add('streaming');
+                        chat.messagesEl.appendChild(chat.currentMessageEl);
+                        chat._streamingEl = chat.currentMessageEl;
+                        chat.scrollToBottom();
+                    } else {
+                        console.log('[RXCAFE] TOKEN: Reusing element:', chat.currentMessageEl.dataset.elId, 'role=', chat.currentMessageEl.role);
+                    }
+                    
                     const annotations = chat.currentMessageEl?.dataset.annotations 
                         ? JSON.parse(chat.currentMessageEl.dataset.annotations) 
                         : {};
@@ -177,7 +242,9 @@ export class StreamingManager {
                 }
                 break;
             case 'error':
-                chat.showErrorInMessage(chat.currentMessageEl, data.error);
+                if (chat.currentMessageEl) {
+                    chat.showErrorInMessage(chat.currentMessageEl, data.error);
+                }
                 break;
             case 'finish':
             case 'done':
