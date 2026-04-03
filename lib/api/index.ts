@@ -50,3 +50,4 @@ export {
 export { handleSessionStream, handleErrorStream, handleSystemCommand } from './streams.js';
 export { handleListPresets, handleCreatePreset, handleGetPreset, handleUpdatePreset, handleDeletePreset, handleCreateSessionFromPreset } from './presets.js';
 export { handleListQuickies, handleCreateQuickie, handleGetQuickie, handleUpdateQuickie, handleDeleteQuickie, handleLaunchQuickie } from './quickies.js';
+export { handleListTemplates } from './templates.js';

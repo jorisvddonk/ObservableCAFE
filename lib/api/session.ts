@@ -82,11 +82,18 @@ export async function handleCreateSession(body?: any): Promise<Response> {
     const uiMode = body?.uiMode || 'chat';
     const session = await createSession(config, { agentId, runtimeConfig, uiMode });
     
-    if (body?.backend || body?.model || body?.systemPrompt || body?.llmParams) {
+    if (body?.backend || body?.model || body?.systemPrompt || body?.llmParams || body?.promptTemplate || body?.templateVars) {
       const annotations: Record<string, any> = { 'config.type': 'runtime' };
       if (body.backend) annotations['config.backend'] = body.backend;
       if (body.model) annotations['config.model'] = body.model;
       if (body.systemPrompt) annotations['config.systemPrompt'] = body.systemPrompt;
+      if (body.promptTemplate) annotations['config.promptTemplate'] = body.promptTemplate;
+      
+      if (body.templateVars && typeof body.templateVars === 'object') {
+        for (const [key, value] of Object.entries(body.templateVars)) {
+          annotations[`config.templateVars.${key}`] = value;
+        }
+      }
       
       // Merge explicit llmParams with agent defaults
       const schemaDefaults = agent.configSchema?.default?.llmParams || {};
@@ -106,6 +113,7 @@ export async function handleCreateSession(body?: any): Promise<Response> {
       if (defaults.backend) annotations['config.backend'] = defaults.backend;
       if (defaults.model) annotations['config.model'] = defaults.model;
       if (defaults.systemPrompt) annotations['config.systemPrompt'] = defaults.systemPrompt;
+      if (defaults.promptTemplate) annotations['config.promptTemplate'] = defaults.promptTemplate;
       
       if (defaults.llmParams) {
         const llmDefaults = defaults.llmParams;

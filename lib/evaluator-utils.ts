@@ -10,6 +10,7 @@ import type { Chunk } from '../lib/chunk.js';
 import { createTextChunk, createNullChunk, annotateChunk } from '../lib/chunk.js';
 import { Observable } from '../lib/stream.js';
 import { buildConversationContext } from '../core.js';
+import { defaultInterpolator, nullInterpolator, type InterpolatorFn } from '../lib/prompt-templates.js';
 
 /**
  * Complete a chat turn by generating an LLM response.
@@ -37,12 +38,30 @@ export function completeTurnWithLLM(
       return;
     }
     
-    const context = buildConversationContext(session.history, chunk.id, session.systemPrompt);
+    const templateVars = (session.runtimeConfig as any).templateVars;
+    const result = buildConversationContext(session.history, chunk.id, session.systemPrompt, templateVars);
+    const context = result.context;
+    const template = result.template;
     const currentMessage = chunk.content as string;
     
+    const interpolator: InterpolatorFn = template.interpolator === null
+      ? nullInterpolator
+      : (template.interpolator || defaultInterpolator);
+    
+    const interpolate = (text: string): string => {
+      if (!templateVars) return text;
+      return interpolator(text, templateVars);
+    };
+    
+    const userParts: string[] = [];
+    if (template.userPrefix) userParts.push(interpolate(template.userPrefix));
+    userParts.push(currentMessage);
+    if (template.userSuffix) userParts.push(interpolate(template.userSuffix));
+    userParts.push(interpolate(template.assistantPrefix));
+    
     const prompt = context
-      ? `${context}\n\nUser: ${currentMessage}\nAssistant:`
-      : `User: ${currentMessage}\nAssistant:`;
+      ? `${context}\n\n${userParts.join('')}`
+      : userParts.join('');
     
     if (session.config.tracing) {
       console.log('\n═══════════════════════════════════════════════════════════');

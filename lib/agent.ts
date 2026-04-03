@@ -122,15 +122,27 @@ export interface RuntimeSessionConfig {
   model?: string;
   llmParams?: LLMParams;
   systemPrompt?: string;
+  promptTemplate?: string;
+  templateVars?: Record<string, string>;
   voice?: any;
 }
 
 export function extractRuntimeConfigFromChunk(configChunk: Chunk): RuntimeSessionConfig {
+  const templateVars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(configChunk.annotations)) {
+    if (key.startsWith('config.templateVars.')) {
+      const varName = key.slice('config.templateVars.'.length);
+      templateVars[varName] = String(value);
+    }
+  }
+  
   return {
     backend: configChunk.annotations['config.backend'],
     model: configChunk.annotations['config.model'],
     llmParams: extractLLMParamsFromChunk(configChunk),
     systemPrompt: configChunk.annotations['config.systemPrompt'],
+    promptTemplate: configChunk.annotations['config.promptTemplate'],
+    templateVars: Object.keys(templateVars).length > 0 ? templateVars : undefined,
     voice: configChunk.annotations['config.voice'],
   };
 }

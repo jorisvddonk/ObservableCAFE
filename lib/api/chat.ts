@@ -130,6 +130,7 @@ export async function handleAddChunk(sessionId: string, options: AddChunkOptions
         backend: session.backend,
         model: session.model,
         systemPrompt: session.systemPrompt,
+        promptTemplate: session.runtimeConfig.promptTemplate,
       };
       if (session.runtimeConfig.llmParams) existingConfig.llmParams = session.runtimeConfig.llmParams;
       if (session.runtimeConfig.voice) existingConfig.voice = session.runtimeConfig.voice;
@@ -139,10 +140,12 @@ export async function handleAddChunk(sessionId: string, options: AddChunkOptions
       const backend = options.annotations['config.backend'] || existingConfig.backend;
       const model = options.annotations['config.model'] || existingConfig.model;
       const systemPrompt = options.annotations['config.systemPrompt'] || existingConfig.systemPrompt;
+      const promptTemplate = options.annotations['config.promptTemplate'] || existingConfig.promptTemplate;
       
       if (backend) runtimeConfig.backend = backend;
       if (model) runtimeConfig.model = model;
       if (systemPrompt) runtimeConfig.systemPrompt = systemPrompt;
+      if (promptTemplate) runtimeConfig.promptTemplate = promptTemplate;
       
       const llmParams: any = {};
       const llmKeys = ['temperature', 'maxTokens', 'topP', 'topK', 'repeatPenalty', 'stop', 'stopTokenStrip', 'seed', 'maxContextLength', 'numCtx'];

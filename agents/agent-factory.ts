@@ -442,6 +442,7 @@ export const agentFactory: AgentDefinition = {
       backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)' },
       model: { type: 'string', description: 'Model name' },
       systemPrompt: { type: 'string', description: 'System prompt' },
+      promptTemplate: { type: 'string', description: 'Prompt template for formatting messages', enum: ['rxcafe', 'mistral-tekken', 'mistral-instruct', 'chatml', 'llama3-instruct', 'alpaca', 'vicuna', 'gemma', 'deepseek', 'qwen', 'phi'] },
       llmParams: {
         type: 'object',
         properties: {

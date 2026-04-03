@@ -59,6 +59,7 @@ import {
 import { getAgent, loadAgents, listAgents, listBackgroundAgents } from './lib/agent-loader.js';
 import { SessionStore } from './lib/session-store.js';
 import { schedule, clearAllScheduledJobs } from './lib/scheduler.js';
+import { getPromptTemplate, listPromptTemplates, defaultInterpolator, nullInterpolator, type PromptTemplate, type InterpolatorFn } from './lib/prompt-templates.js';
 
 // =============================================================================
 // Configuration
@@ -896,26 +897,78 @@ export function createTrustFilter(): Evaluator {
  * @param systemPrompt - Optional system prompt to prepend
  * @returns Formatted context string for LLM
  */
-export function buildConversationContext(history: Chunk[], excludeChunkId?: string, systemPrompt?: string | null): string {
+export interface ConversationContextResult {
+  context: string;
+  template: PromptTemplate;
+}
+
+/**
+ * Build a conversation context string from session history.
+ * 
+ * Scans history for the most recent runtime config chunk to find:
+ * - System prompt (config.systemPrompt)
+ * - Prompt template (config.promptTemplate)
+ * 
+ * The prompt template controls how system/user/assistant messages are formatted.
+ * 
+ * @param history - Session history array
+ * @param excludeChunkId - Chunk ID to exclude (typically the current input)
+ * @param systemPrompt - Optional system prompt to prepend
+ * @returns Object with formatted context string and the template used
+ */
+export function buildConversationContext(history: Chunk[], excludeChunkId?: string, systemPrompt?: string | null, templateVars?: Record<string, string>): ConversationContextResult {
   const contextParts: string[] = [];
   
-  // Extract system prompt from the most recent runtime config chunk that sets it,
-  // falling back to the passed systemPrompt parameter
+  // Extract template name, system prompt, and template vars from the most recent runtime config chunk
   let effectiveSystemPrompt = systemPrompt;
+  let effectiveTemplateVars = templateVars;
+  let template: PromptTemplate = getPromptTemplate('rxcafe')!;
   for (let i = history.length - 1; i >= 0; i--) {
     const chunk = history[i];
     if (chunk.contentType === 'null' && chunk.annotations['config.type'] === 'runtime') {
       const configPrompt = chunk.annotations['config.systemPrompt'];
       if (configPrompt) {
         effectiveSystemPrompt = String(configPrompt);
-        break;
       }
+      const configTemplate = chunk.annotations['config.promptTemplate'];
+      if (configTemplate) {
+        const found = getPromptTemplate(String(configTemplate));
+        if (found) template = found;
+      }
+      // Collect template vars from annotations
+      const vars: Record<string, string> = { ...effectiveTemplateVars };
+      for (const [key, value] of Object.entries(chunk.annotations)) {
+        if (key.startsWith('config.templateVars.')) {
+          const varName = key.slice('config.templateVars.'.length);
+          vars[varName] = String(value);
+        }
+      }
+      effectiveTemplateVars = vars;
+      break;
     }
   }
   
+  const interpolator: InterpolatorFn = template.interpolator === null
+    ? nullInterpolator
+    : (template.interpolator || defaultInterpolator);
+  
+  const interpolate = (text: string): string => {
+    if (!effectiveTemplateVars) return text;
+    return interpolator(text, effectiveTemplateVars);
+  };
+  
   // Add system prompt at the top
   if (effectiveSystemPrompt) {
-    contextParts.push(`System: ${effectiveSystemPrompt}`);
+    let processedPrompt = effectiveSystemPrompt;
+    if (template.systemPromptTransform) {
+      processedPrompt = template.systemPromptTransform(processedPrompt);
+    }
+    processedPrompt = interpolate(processedPrompt);
+    const parts: string[] = [];
+    if (template.systemPrefix) parts.push(interpolate(template.systemPrefix));
+    parts.push(processedPrompt);
+    if (template.systemSuffix) parts.push(interpolate(template.systemSuffix));
+    contextParts.push(parts.join(''));
   }
   
   // Process each chunk in history
@@ -940,9 +993,17 @@ export function buildConversationContext(history: Chunk[], excludeChunkId?: stri
     
     // Format based on role or source
     if (role === 'user') {
-      contextParts.push(`User: ${content}`);
+      const parts: string[] = [];
+      if (template.userPrefix) parts.push(interpolate(template.userPrefix));
+      parts.push(content);
+      if (template.userSuffix) parts.push(interpolate(template.userSuffix));
+      contextParts.push(parts.join(''));
     } else if (role === 'assistant') {
-      contextParts.push(`Assistant: ${content}`);
+      const parts: string[] = [];
+      if (template.assistantPrefix) parts.push(interpolate(template.assistantPrefix));
+      parts.push(content);
+      if (template.assistantSuffix) parts.push(interpolate(template.assistantSuffix));
+      contextParts.push(parts.join(''));
     } else if (chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations['web.source-url']) {
       // Web content is marked with its source URL
       const url = chunk.annotations['web.source-url'] || 'unknown';
@@ -950,7 +1011,10 @@ export function buildConversationContext(history: Chunk[], excludeChunkId?: stri
     }
   }
   
-  return contextParts.join('\n\n');
+  return {
+    context: contextParts.join('\n\n'),
+    template,
+  };
 }
 
 // =============================================================================

@@ -509,6 +509,31 @@ export class AfeWizard extends LitElement {
   _handleFieldChange(e) {
     const { name, value } = e.detail;
     this.formData = { ...this.formData, [name]: value };
+    
+    // When promptTemplate changes, update stop tokens from template defaults
+    if (name === 'promptTemplate') {
+      this._updateStopFromTemplate(value);
+    }
+  }
+  
+  async _updateStopFromTemplate(templateName) {
+    if (!templateName) return;
+    try {
+      const token = window.RXCAFE_TOKEN || new URLSearchParams(window.location.search).get('token');
+      const url = new URL('/api/templates', this.apiUrl);
+      if (token) url.searchParams.set('token', token);
+      const resp = await fetch(url.toString());
+      const data = await resp.json();
+      const template = (data.templates || []).find(t => t.name === templateName);
+      if (!this.formData.llmParams) this.formData.llmParams = {};
+      if (template && template.defaultStop) {
+        this.formData = { ...this.formData, llmParams: { ...this.formData.llmParams, stop: template.defaultStop } };
+      } else {
+        this.formData = { ...this.formData, llmParams: { ...this.formData.llmParams, stop: [] } };
+      }
+    } catch (err) {
+      console.warn('[WIZARD] Failed to fetch template defaults:', err);
+    }
   }
 
   _handleAgentSelect(agent) {
@@ -727,6 +752,11 @@ export class AfeWizard extends LitElement {
         config.llmParams[key] = val;
         delete config[flatKey];
       }
+    }
+    
+    // Handle promptTemplate (top-level, not inside llmParams)
+    if (config.promptTemplate === '') {
+      delete config.promptTemplate;
     }
     
     this.dispatchEvent(new CustomEvent('afe-wizard-complete', {

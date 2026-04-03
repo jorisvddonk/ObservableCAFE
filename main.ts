@@ -376,6 +376,7 @@ const server = serve({
     
     if (pathname === '/api/agents' && request.method === 'GET') return addCors(await api.handleListAgents(), corsHeaders);
     if (pathname === '/api/sessions' && request.method === 'GET') return addCors(await api.handleListSessions(), corsHeaders);
+    if (pathname === '/api/templates' && request.method === 'GET') return addCors(await api.handleListTemplates(), corsHeaders);
     if (pathname === '/api/session' && request.method === 'POST') return addCors(await api.handleCreateSession(await request.json().catch(() => ({}))), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') return addCors(await api.handleDeleteSession(pathname.split('/')[3]), corsHeaders);
     if (pathname === '/api/models' && request.method === 'GET') return addCors(await api.handleListModels(url.searchParams.get('backend') || undefined), corsHeaders);
