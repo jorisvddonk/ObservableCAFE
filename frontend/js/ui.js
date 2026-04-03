@@ -137,7 +137,7 @@ export class UIManager {
         this.chat.sendBtn.style.display = this.chat.isGenerating ? 'none' : 'block';
         this.chat.sendBtn.disabled = !this.chat.sessionId;
         this.chat.abortBtn.style.display = this.chat.isGenerating ? 'block' : 'none';
-        this.chat.messageInput.disabled = this.chat.isGenerating || !this.chat.sessionId || this.chat.isRecording;
+        this.chat.messageInput.disabled = this.chat.isRecording;
         if (this.chat.copySessionIdBtn) {
             this.chat.copySessionIdBtn.style.display = this.chat.sessionId ? 'inline-block' : 'none';
         }

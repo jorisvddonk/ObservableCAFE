@@ -517,9 +517,10 @@ body {
     border-top: 1px solid var(--border-color);
     padding: 1rem 1.5rem;
     padding-bottom: calc(1.5rem + var(--safe-bottom));
+    width: 100%;
 }
 
-.input-wrapper { display: flex; gap: 0.75rem; align-items: flex-end; max-width: 900px; margin: 0 auto; }
+.input-wrapper { display: flex; gap: 0.75rem; align-items: flex-end; width: 100%; }
 
 #message-input {
     flex: 1;
