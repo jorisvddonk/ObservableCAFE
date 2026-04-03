@@ -101,6 +101,15 @@ export class Database {
       )
     `);
 
+    // Create telegram_current_sessions table (persists last active session per chat)
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS telegram_current_sessions (
+        chat_id INTEGER PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
     // Create connected_agents table
     this.db.run(`
       CREATE TABLE IF NOT EXISTS connected_agents (
@@ -217,6 +226,43 @@ export class Database {
   listAllTelegramSubscriptions(): Array<{ chatId: number, sessionId: string }> {
     const stmt = this.db.prepare(`
       SELECT chat_id, session_id FROM telegram_subscriptions
+    `);
+    const results = stmt.all() as { chat_id: number, session_id: string }[];
+    stmt.finalize();
+    return results.map(r => ({ chatId: r.chat_id, sessionId: r.session_id }));
+  }
+
+  /**
+   * Persist the current session for a Telegram chat
+   */
+  setTelegramCurrentSession(chatId: number, sessionId: string): void {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO telegram_current_sessions (chat_id, session_id, updated_at)
+      VALUES (?, ?, ?)
+    `);
+    stmt.run(chatId, sessionId, now);
+    stmt.finalize();
+  }
+
+  /**
+   * Get the current session for a Telegram chat
+   */
+  getTelegramCurrentSession(chatId: number): string | null {
+    const stmt = this.db.prepare(`
+      SELECT session_id FROM telegram_current_sessions WHERE chat_id = ?
+    `);
+    const result = stmt.get(chatId) as { session_id: string } | undefined;
+    stmt.finalize();
+    return result?.session_id || null;
+  }
+
+  /**
+   * List all current sessions
+   */
+  listAllTelegramCurrentSessions(): Array<{ chatId: number, sessionId: string }> {
+    const stmt = this.db.prepare(`
+      SELECT chat_id, session_id FROM telegram_current_sessions
     `);
     const results = stmt.all() as { chat_id: number, session_id: string }[];
     stmt.finalize();

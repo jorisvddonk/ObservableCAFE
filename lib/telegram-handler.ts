@@ -193,6 +193,36 @@ async function getOrCreateSession(chatId: number): Promise<string | null> {
   let sessionId = telegramState.currentSession.get(chatId);
   if (sessionId) return sessionId;
 
+  // Restore from DB
+  const persistedSessionId = trustDb?.getTelegramCurrentSession(chatId);
+  if (persistedSessionId) {
+    console.log(`[Telegram] Restoring persisted session ${persistedSessionId} for chat ${chatId}`);
+    let session = getSession(persistedSessionId);
+
+    if (!session && sessionStore) {
+      const sessionData = await sessionStore.loadSession(persistedSessionId);
+      if (sessionData) {
+        console.log(`[Telegram] Restoring session from store: ${persistedSessionId}`);
+        session = await createSession(config!, {
+          agentId: sessionData.agentName,
+          isBackground: sessionData.isBackground,
+          sessionId: persistedSessionId,
+        });
+        if (session._agentContext) await session._agentContext.loadState();
+      }
+    }
+
+    if (session) {
+      telegramState.currentSession.set(chatId, session.id);
+      if (!telegramState.allSessions.has(chatId)) {
+        telegramState.allSessions.set(chatId, new Set());
+      }
+      telegramState.allSessions.get(chatId)!.add(session.id);
+      console.log(`[Telegram] Using restored session ${session.id} for chat ${chatId}`);
+      return session.id;
+    }
+  }
+
   const defaultTelegramSessionId = 'default-telegram';
   console.log(`[Telegram] Ensuring default session exists: ${defaultTelegramSessionId}`);
 
@@ -221,6 +251,7 @@ async function getOrCreateSession(chatId: number): Promise<string | null> {
 
   sessionId = session.id;
   telegramState.currentSession.set(chatId, sessionId);
+  trustDb?.setTelegramCurrentSession(chatId, sessionId);
 
   if (!telegramState.allSessions.has(chatId)) {
     telegramState.allSessions.set(chatId, new Set());
@@ -228,7 +259,7 @@ async function getOrCreateSession(chatId: number): Promise<string | null> {
   telegramState.allSessions.get(chatId)!.add(sessionId);
 
   console.log(`[Telegram] Using session ${sessionId} for chat ${chatId}`);
-  await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Ready*\n\nUsing session: \`default-telegram\`\nAgent: ${session.agentName}\n\nType /help for available commands.`, { parseMode: 'Markdown' });
+  await telegramBot!.sendMessage(chatId, `🤖 *RXCAFE Bot Ready*\n\nUsing session: \`${sessionId}\`\nAgent: ${session.agentName}\n\nType /help for available commands.`, { parseMode: 'Markdown' });
 
   return sessionId;
 }
@@ -289,6 +320,7 @@ async function handleCommand(chatId: number, text: string, session: Session, ses
       telegramState.allSessions.set(chatId, new Set());
     }
     telegramState.allSessions.get(chatId)!.add(targetId);
+    trustDb?.setTelegramCurrentSession(chatId, targetId);
 
     await telegramBot.sendMessage(chatId, `✅ Joined session: \`${targetId}\`\nAgent: ${targetSession.agentName}\nName: ${targetSession.displayName || 'None'}`, { parseMode: 'Markdown' });
 
@@ -408,6 +440,7 @@ async function handleCommand(chatId: number, text: string, session: Session, ses
       }
       telegramState.allSessions.get(chatId)!.add(newSession.id);
       telegramState.currentSession.set(chatId, newSession.id);
+      trustDb?.setTelegramCurrentSession(chatId, newSession.id);
 
       await telegramBot.sendMessage(chatId, `✅ New session created\n\nSession: \`${newSession.id}\`\nAgent: ${newSession.agentName}`, { parseMode: 'Markdown' });
     } catch (err) {
@@ -719,6 +752,7 @@ async function switchSession(chatId: number, targetSessionId: string): Promise<v
   telegramState.allSessions.get(chatId)!.add(targetSessionId);
 
   telegramState.currentSession.set(chatId, targetSessionId);
+  trustDb?.setTelegramCurrentSession(chatId, targetSessionId);
   await telegramBot.sendMessage(chatId, `✅ Switched to session: \`${targetSessionId}\`\nAgent: ${targetSession.agentName}\nName: ${targetSession.displayName || 'None'}`, { parseMode: 'Markdown' });
 
   ensureSubscription(chatId, targetSession);
@@ -816,6 +850,21 @@ export async function restoreTelegramSubscriptions(): Promise<void> {
     const session = getSession(sub.sessionId);
     if (session) {
       ensureSubscription(sub.chatId, session);
+    }
+  }
+
+  console.log('[Telegram] Restoring current sessions...');
+  const currentSessions = trustDb.listAllTelegramCurrentSessions();
+  for (const cs of currentSessions) {
+    telegramState.currentSession.set(cs.chatId, cs.sessionId);
+    const session = getSession(cs.sessionId);
+    if (session) {
+      if (!telegramState.allSessions.has(cs.chatId)) {
+        telegramState.allSessions.set(cs.chatId, new Set());
+      }
+      telegramState.allSessions.get(cs.chatId)!.add(cs.sessionId);
+      ensureSubscription(cs.chatId, session);
+      console.log(`[Telegram] Restored current session ${cs.sessionId} for chat ${cs.chatId}`);
     }
   }
 }
