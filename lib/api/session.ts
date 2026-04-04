@@ -80,6 +80,9 @@ export async function handleCreateSession(body?: any): Promise<Response> {
     if (body?.templateVars || defaults.templateVars) {
       runtimeConfig.templateVars = body?.templateVars || defaults.templateVars;
     }
+    if (body?.openaiBaseUrl || defaults.openaiBaseUrl) {
+      runtimeConfig.openaiBaseUrl = body?.openaiBaseUrl || defaults.openaiBaseUrl;
+    }
     
     if (agent.configSchema) {
       const errors = await validateConfigAgainstSchema(runtimeConfig, agent.configSchema);
@@ -102,6 +105,7 @@ export async function handleCreateSession(body?: any): Promise<Response> {
     if (runtimeConfig.systemPrompt) annotations['config.systemPrompt'] = runtimeConfig.systemPrompt;
     if (runtimeConfig.promptTemplate) annotations['config.promptTemplate'] = runtimeConfig.promptTemplate;
     if (runtimeConfig.voice) annotations['config.voice'] = runtimeConfig.voice;
+    if (runtimeConfig.openaiBaseUrl) annotations['config.openaiBaseUrl'] = runtimeConfig.openaiBaseUrl;
     
     if (runtimeConfig.templateVars && typeof runtimeConfig.templateVars === 'object') {
       for (const [key, value] of Object.entries(runtimeConfig.templateVars)) {

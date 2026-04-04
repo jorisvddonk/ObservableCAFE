@@ -46,6 +46,7 @@ import { Subject, Observable, merge, EMPTY, from, filter, map, mergeMap, catchEr
 import { KoboldEvaluator } from './lib/kobold-api.js';
 import { OllamaEvaluator } from './lib/ollama-api.js';
 import { LlamaCppEvaluator } from './lib/llamacpp-api.js';
+import { OpenAIEvaluator } from './lib/openai-api.js';
 import { 
   type AgentDefinition, 
   type AgentSessionContext, 
@@ -65,7 +66,7 @@ import { getPromptTemplate, listPromptTemplates, defaultInterpolator, nullInterp
 // Configuration
 // =============================================================================
 
-export type LLMBackend = 'kobold' | 'ollama' | 'llamacpp';
+export type LLMBackend = 'kobold' | 'ollama' | 'llamacpp' | 'openai';
 
 export interface CoreConfig {
   backend: LLMBackend;
@@ -74,6 +75,9 @@ export interface CoreConfig {
   ollamaModel: string;
   llamacppBaseUrl: string;
   llamacppModel: string;
+  openaiBaseUrl: string;
+  openaiModel: string;
+  openaiApiKey: string;
   tracing: boolean;
   sessionStore?: SessionStore;
 }
@@ -86,6 +90,9 @@ export function getDefaultConfig(): CoreConfig {
     ollamaModel: process.env.OLLAMA_MODEL || 'gemma3:1b',
     llamacppBaseUrl: process.env.LLAMACPP_URL || 'http://localhost:8080',
     llamacppModel: process.env.LLAMACPP_MODEL || 'model.gguf',
+    openaiBaseUrl: process.env.OPENAI_URL || 'http://localhost:8000',
+    openaiModel: process.env.OPENAI_MODEL || '',
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
     tracing: process.env.RXCAFE_TRACE === '1'
   };
 }
@@ -103,7 +110,8 @@ export function createLLMChunkEvaluator(
   backend: LLMBackend, 
   config: CoreConfig,
   model?: string,
-  llmParams?: LLMParams
+  llmParams?: LLMParams,
+  openaiBaseUrl?: string
 ): LLMEvaluator {
   if (backend === 'ollama') {
     const ollama = new OllamaEvaluator(config.ollamaBaseUrl, model || config.ollamaModel, '', llmParams);
@@ -115,6 +123,13 @@ export function createLLMChunkEvaluator(
     const llamacpp = new LlamaCppEvaluator(config.llamacppBaseUrl, model || config.llamacppModel, '', llmParams);
     return {
       evaluateChunk: llamacpp.evaluateChunk.bind(llamacpp),
+      abort: async () => {}
+    };
+  } else if (backend === 'openai') {
+    const baseUrl = openaiBaseUrl || config.openaiBaseUrl;
+    const openai = new OpenAIEvaluator(baseUrl, model || config.openaiModel, '', llmParams, config.openaiApiKey);
+    return {
+      evaluateChunk: openai.evaluateChunk.bind(openai),
       abort: async () => {}
     };
   } else {
@@ -214,7 +229,7 @@ export async function createSession(
     outputStream,
     errorStream,
     history: [],
-    llmEvaluator: createLLMChunkEvaluator(backend, config, model, runtimeConfig.llmParams),
+    llmEvaluator: createLLMChunkEvaluator(backend, config, model, runtimeConfig.llmParams, runtimeConfig.openaiBaseUrl),
     backend,
     model,
     abortController: null,
@@ -259,7 +274,7 @@ export async function createSession(
         p = { ...session.runtimeConfig.llmParams, ...params };
       }
 
-      const evaluator = createLLMChunkEvaluator(b, config, m, p);
+      const evaluator = createLLMChunkEvaluator(b, config, m, p, session.runtimeConfig.openaiBaseUrl);
       return {
         evaluateChunk: evaluator.evaluateChunk,
         abort: evaluator.abort,
@@ -317,7 +332,8 @@ export async function createSession(
           session.backend,
           config,
           session.model,
-          session.runtimeConfig.llmParams
+          session.runtimeConfig.llmParams,
+          session.runtimeConfig.openaiBaseUrl
         );
       }
     },
@@ -401,7 +417,8 @@ export async function createSession(
             session.backend,
             config,
             session.model,
-            session.runtimeConfig.llmParams
+            session.runtimeConfig.llmParams,
+            session.runtimeConfig.openaiBaseUrl
           );
         }
         
@@ -554,7 +571,7 @@ export async function reloadSessionAgent(sessionId: string, config: CoreConfig):
         p = { ...session.runtimeConfig.llmParams, ...params };
       }
 
-      const evaluator = createLLMChunkEvaluator(b, config, m, p);
+      const evaluator = createLLMChunkEvaluator(b, config, m, p, session.runtimeConfig.openaiBaseUrl);
       return {
         evaluateChunk: evaluator.evaluateChunk,
         abort: evaluator.abort,
@@ -1021,7 +1038,7 @@ export function buildConversationContext(history: Chunk[], excludeChunkId?: stri
 // Model Listing
 // =============================================================================
 
-export async function listModels(config: CoreConfig, backend?: string): Promise<{ models: string[]; backend: string }> {
+export async function listModels(config: CoreConfig, backend?: string, baseUrl?: string): Promise<{ models: string[]; backend: string }> {
   const targetBackend = backend || config.backend;
   
   if (targetBackend === 'ollama') {
@@ -1034,6 +1051,12 @@ export async function listModels(config: CoreConfig, backend?: string): Promise<
     const api = new LlamaCppAPI(config.llamacppBaseUrl, config.llamacppModel);
     const models = await api.listModels();
     return { models, backend: 'llamacpp' };
+  } else if (targetBackend === 'openai') {
+    const { OpenAIAPI } = await import('./lib/openai-api.js');
+    const effectiveBaseUrl = baseUrl || config.openaiBaseUrl;
+    const api = new OpenAIAPI(effectiveBaseUrl, config.openaiModel, config.openaiApiKey);
+    const models = await api.listModels();
+    return { models, backend: 'openai' };
   } else {
     return { 
       models: [],

@@ -26,6 +26,7 @@ export class AfeWizard extends LitElement {
     formData: { type: Object },
     models: { type: Array },
     loadingModels: { type: Boolean },
+    connectionStatus: { type: String },
     error: { type: String },
     apiUrl: { type: String }
   };
@@ -449,14 +450,15 @@ export class AfeWizard extends LitElement {
       generatedEnum = [
         { value: 'kobold', label: 'KoboldCPP' },
         { value: 'ollama', label: 'Ollama' },
-        { value: 'llamacpp', label: 'LlamaCPP' }
+        { value: 'llamacpp', label: 'LlamaCPP' },
+        { value: 'openai', label: 'OpenAI' }
       ];
     }
     if (!prop.enum && propName === 'model' && this.formData.backend) {
       // Model field - use radio buttons if we have few options, otherwise dropdown
       generatedEnum = this.models.length > 0 
         ? this.models 
-        : [{ value: 'gemma3:1b', label: 'gemma3:1b (default)' }];
+        : [];
     }
 
     // Handle enum types (including auto-generated)
@@ -514,6 +516,11 @@ export class AfeWizard extends LitElement {
     if (name === 'promptTemplate') {
       this._updateStopFromTemplate(value);
     }
+    
+    // When OpenAI base URL changes, reload models
+    if (name === 'openaiBaseUrl' && this.formData.backend === 'openai') {
+      this._loadOllamaModels();
+    }
   }
   
   async _updateStopFromTemplate(templateName) {
@@ -564,14 +571,14 @@ export class AfeWizard extends LitElement {
         }
       
       // Load models for default backend
-      if (formData.backend === 'ollama' || formData.backend === 'llamacpp') {
+      if (formData.backend === 'ollama' || formData.backend === 'llamacpp' || formData.backend === 'openai') {
         this._loadOllamaModels();
       }
     }
     
     this.formData = formData;
   }
-
+  
   _handlePresetSelect(preset) {
     console.log('[WIZARD] _handlePresetSelect called for:', preset?.name);
     this.selectedPreset = preset;
@@ -600,7 +607,7 @@ export class AfeWizard extends LitElement {
     if (preset.llmParams) formData.llmParams = preset.llmParams;
     
     // Load models if ollama or llamacpp backend
-    if (preset.backend === 'ollama' || preset.backend === 'llamacpp') {
+    if (preset.backend === 'ollama' || preset.backend === 'llamacpp' || preset.backend === 'openai') {
       this._loadOllamaModels();
     }
     
@@ -614,6 +621,7 @@ export class AfeWizard extends LitElement {
   async _loadOllamaModels() {
     console.log('[WIZARD] _loadOllamaModels called');
     this.loadingModels = true;
+    this.connectionStatus = 'loading';
     try {
       const token = window.RXCAFE_TOKEN || '';
       const baseUrl = window.location.origin;
@@ -623,23 +631,36 @@ export class AfeWizard extends LitElement {
       if (token) {
         url.searchParams.set('token', token);
       }
+      // Pass per-session base URL for OpenAI
+      if (backend === 'openai' && this.formData.openaiBaseUrl) {
+        url.searchParams.set('baseUrl', this.formData.openaiBaseUrl);
+      }
       console.log('[WIZARD] final url:', url.toString());
       const response = await fetch(url.toString());
       console.log('[WIZARD] response status:', response.status);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const data = await response.json();
-      if (data.models) {
+      if (data.models && data.models.length > 0) {
         this.models = data.models.map(m => ({ value: m, label: m }));
+        this.connectionStatus = 'connected';
+      } else {
+        this.models = [];
+        this.connectionStatus = 'error';
       }
     } catch (err) {
       console.error('Failed to load models:', err);
-      this.models = [{ value: 'gemma3:1b', label: 'gemma3:1b (default)' }];
+      this.models = [];
+      this.connectionStatus = 'error';
     }
     this.loadingModels = false;
   }
 
   async _handleBackendChange(backend) {
     this.formData = { ...this.formData, backend };
-    if (backend === 'ollama' || backend === 'llamacpp') {
+    this.connectionStatus = '';
+    if (backend === 'ollama' || backend === 'llamacpp' || backend === 'openai') {
       await this._loadOllamaModels();
     }
   }
@@ -694,7 +715,7 @@ export class AfeWizard extends LitElement {
           this.error = 'Please select a backend';
           return;
         }
-        if (props.model && (this.formData.backend === 'ollama' || this.formData.backend === 'llamacpp') && !this.formData.model) {
+        if (props.model && (this.formData.backend === 'ollama' || this.formData.backend === 'llamacpp' || this.formData.backend === 'openai') && !this.formData.model) {
           this.error = 'Please select a model';
           return;
         }
@@ -893,7 +914,8 @@ export class AfeWizard extends LitElement {
               : [
                   { value: 'kobold', label: 'KoboldCPP' },
                   { value: 'ollama', label: 'Ollama' },
-                  { value: 'llamacpp', label: 'LlamaCPP' }
+                  { value: 'llamacpp', label: 'LlamaCPP' },
+                  { value: 'openai', label: 'OpenAI' }
                 ];
             return html`
               <afe-radio
@@ -904,18 +926,46 @@ export class AfeWizard extends LitElement {
                 .value=${this.formData.backend || ''}
                 @afe-change=${(e) => this._handleBackendChange(e.detail.value)}
               ></afe-radio>
+              ${this.formData.backend === 'openai' ? html`
+                <afe-text
+                  name="openaiBaseUrl"
+                  label="OpenAI Base URL"
+                  placeholder="http://localhost:8000"
+                  .value=${this.formData.openaiBaseUrl || ''}
+                ></afe-text>
+                ${this.connectionStatus === 'loading' ? html`
+                  <div style="margin-top:-0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:var(--afe-color-text-muted,#6b7280);">
+                    Connecting...
+                  </div>
+                ` : ''}
+                ${this.connectionStatus === 'connected' ? html`
+                  <div style="margin-top:-0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:#16a34a;">
+                    Connected
+                  </div>
+                ` : ''}
+                ${this.connectionStatus === 'error' ? html`
+                  <div style="margin-top:-0.5rem;margin-bottom:0.75rem;font-size:0.8rem;color:#dc2626;">
+                    Could not connect
+                  </div>
+                ` : ''}
+              ` : ''}
             `;
           }
           
           // Handle model specially - if ollama or llamacpp, show dropdown with loaded models
           if (propName === 'model') {
-            const isOllama = this.formData.backend === 'ollama' || this.formData.backend === 'llamacpp';
+            const isOllama = this.formData.backend === 'ollama' || this.formData.backend === 'llamacpp' || this.formData.backend === 'openai';
             if (isOllama) {
+              if (this.connectionStatus === 'error') {
+                return html`
+                  <div style="margin-bottom:1rem;padding:0.75rem 1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:0.5rem;font-size:0.875rem;color:#dc2626;">
+                    Could not load models. Check the base URL and try again.
+                  </div>
+                `;
+              }
               const modelOptions = this.loadingModels 
                 ? [{ value: '', label: 'Loading...' }]
-                : this.models.length > 0 
-                  ? this.models 
-                  : [{ value: 'gemma3:1b', label: 'gemma3:1b (default)' }];
+                : this.models;
               return html`
                 <afe-select
                   name="model"

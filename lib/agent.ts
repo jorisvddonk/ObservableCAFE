@@ -125,6 +125,7 @@ export interface RuntimeSessionConfig {
   promptTemplate?: string;
   templateVars?: Record<string, string>;
   voice?: any;
+  openaiBaseUrl?: string;
 }
 
 export function extractRuntimeConfigFromChunk(configChunk: Chunk): RuntimeSessionConfig {
@@ -144,6 +145,7 @@ export function extractRuntimeConfigFromChunk(configChunk: Chunk): RuntimeSessio
     promptTemplate: configChunk.annotations['config.promptTemplate'],
     templateVars: Object.keys(templateVars).length > 0 ? templateVars : undefined,
     voice: configChunk.annotations['config.voice'],
+    openaiBaseUrl: configChunk.annotations['config.openaiBaseUrl'],
   };
 }
 

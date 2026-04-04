@@ -87,6 +87,8 @@ console.log(`Ollama URL: ${config.ollamaBaseUrl}`);
 console.log(`Ollama Model: ${config.ollamaModel}`);
 console.log(`LlamaCpp URL: ${config.llamacppBaseUrl}`);
 console.log(`LlamaCpp Model: ${config.llamacppModel}`);
+console.log(`OpenAI URL: ${config.openaiBaseUrl}`);
+console.log(`OpenAI Model: ${config.openaiModel}`);
 console.log(`Port: ${PORT}`);
 console.log(`Tracing: ${config.tracing ? 'ENABLED' : 'disabled'}`);
 console.log(`Telegram: ${TELEGRAM_TOKEN ? 'ENABLED' : 'disabled'}`);
@@ -379,7 +381,7 @@ const server = serve({
     if (pathname === '/api/templates' && request.method === 'GET') return addCors(await api.handleListTemplates(), corsHeaders);
     if (pathname === '/api/session' && request.method === 'POST') return addCors(await api.handleCreateSession(await request.json().catch(() => ({}))), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+$/) && request.method === 'DELETE') return addCors(await api.handleDeleteSession(pathname.split('/')[3]), corsHeaders);
-    if (pathname === '/api/models' && request.method === 'GET') return addCors(await api.handleListModels(url.searchParams.get('backend') || undefined), corsHeaders);
+    if (pathname === '/api/models' && request.method === 'GET') return addCors(await api.handleListModels(url.searchParams.get('backend') || undefined, url.searchParams.get('baseUrl') || undefined), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+\/history$/) && request.method === 'GET') return addCors(await api.handleGetHistory(pathname.split('/')[3]), corsHeaders);
     if (pathname.match(/^\/api\/session\/[^/]+\/ui-mode$/) && request.method === 'POST') {
       const sessionId = pathname.split('/')[3];

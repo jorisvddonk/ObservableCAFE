@@ -190,8 +190,8 @@ class RXCafeChat {
         await Promise.all([this.sessionsManager.loadAgents(), this.sessionsManager.loadSessions()]);
         
         const selectedBackend = document.querySelector('input[name="backend"]:checked')?.value;
-        if (selectedBackend === 'ollama') {
-            this.loadOllamaModels('ollama');
+        if (selectedBackend === 'ollama' || selectedBackend === 'openai') {
+            this.loadOllamaModels(selectedBackend);
         }
     }
     

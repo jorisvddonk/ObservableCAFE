@@ -189,11 +189,11 @@ export async function handleAbort(sessionId: string): Promise<Response> {
   return new Response(JSON.stringify({ message: 'Generation aborted' }), { headers: { 'Content-Type': 'application/json' } });
 }
 
-export async function handleListModels(backend?: string): Promise<Response> {
+export async function handleListModels(backend?: string, baseUrl?: string): Promise<Response> {
   const { listModels } = await import('../../core.js');
   
   try {
-    const result = await listModels(config, backend);
+    const result = await listModels(config, backend, baseUrl);
     
     if (result.backend === 'kobold') {
       return new Response(JSON.stringify({ backend: 'kobold', message: 'KoboldCPP does not support model listing' }), { headers: { 'Content-Type': 'application/json' } });
