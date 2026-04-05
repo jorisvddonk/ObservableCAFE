@@ -60,6 +60,12 @@ export class StreamingManager {
             const chunk = data.chunk;
             const role = chunk.annotations?.['chat.role'];
 
+            // Add all chunks to raw chunks (no filtering in inspector)
+            chat.addRawChunk(chunk);
+            chat.updateInspector();
+
+            const isControl = chunk.contentType === 'null' && chunk.producer === 'ui.control';
+
             const chunkEvent = new CustomEvent('rxcafe:chunk', {
                 detail: { chunk, sessionId: chat.sessionId, uiMode: chat.uiMode },
                 bubbles: true,
@@ -67,7 +73,7 @@ export class StreamingManager {
             });
             document.dispatchEvent(chunkEvent);
 
-            if (chunk.contentType === 'null' && chunk.annotations?.['config.type'] === 'runtime') {
+            if (chunk.annotations?.['config.type'] === 'runtime') {
                 chat.backend = chunk.annotations['config.backend'] || chat.backend;
                 chat.model = chunk.annotations['config.model'] || chat.model;
                 chat.updateHeaderInfo();
@@ -93,7 +99,6 @@ export class StreamingManager {
                         chat.updateMessageContent(el, chunk.content, chunk.annotations);
                     }
                 }
-                chat.addRawChunk(chunk);
                 return;
             }
 
@@ -104,8 +109,6 @@ export class StreamingManager {
                     chat.updateSentiment(chat._pendingUserMsg, chunk.annotations['com.rxcafe.example.sentiment']);
                 }
                 chat._pendingUserMsg = null;
-                chat.addRawChunk(chunk);
-                chat.updateInspector();
                 return;
             }
 
@@ -123,25 +126,21 @@ export class StreamingManager {
                 chat.chunkElements.set(chunk.id, assistantEl);
                 chat.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
                 chat.messagesManager.addQuickResponses(assistantEl, chunk);
-                chat.addRawChunk(chunk);
-                chat.updateInspector();
                 return;
             }
 
             const isError = chunk.contentType === 'null' && chunk.annotations?.['error.message'];
             if (isError) {
-                chat.addRawChunk(chunk);
                 chat.renderChunk(chunk);
-                chat.updateInspector();
                 // Stop generating on error
                 chat.isGenerating = false;
                 chat.updateUIState();
                 return;
             }
 
-            chat.addRawChunk(chunk);
-            chat.renderChunk(chunk);
-            chat.updateInspector();
+            if (!isControl) {
+                chat.renderChunk(chunk);
+            }
 
             // Update UI state from annotations
             if (chunk.annotations && typeof chunk.annotations['ui.input.blocked'] === 'boolean') {

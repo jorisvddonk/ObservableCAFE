@@ -33,36 +33,32 @@ export function handleSessionStream(sessionId: string, binaryRefs: boolean = fal
       
       const outputSub = session.outputStream.subscribe({
         next: (chunk: Chunk) => {
-          // Include text, binary, null chunks with visualization or error annotations
-          const isVisualization = chunk.contentType === 'null' && chunk.annotations?.['visualizer.type'] === 'rx-marbles';
-          const isError = chunk.contentType === 'null' && chunk.annotations?.['error.message'];
-          if (chunk.contentType === 'text' || chunk.contentType === 'binary' || isVisualization || isError) {
-            try {
-              let serializedChunk: any = chunk;
-              if (chunk.contentType === 'binary') {
-                if (binaryRefs) {
-                  const binaryContent = chunk.content as any;
-                  serializedChunk = {
-                    ...chunk,
-                    contentType: 'binary-ref',
-                    content: {
-                      chunkId: chunk.id,
-                      mimeType: binaryContent.mimeType,
-                      byteSize: binaryContent.data.byteLength,
-                    },
-                  };
-                } else {
-                  serializedChunk = {
-                    ...chunk,
-                    content: { ...chunk.content, data: Array.from((chunk.content as any).data) }
-                  };
-                }
+          // Send all chunks (no filtering)
+          try {
+            let serializedChunk: any = chunk;
+            if (chunk.contentType === 'binary') {
+              if (binaryRefs) {
+                const binaryContent = chunk.content as any;
+                serializedChunk = {
+                  ...chunk,
+                  contentType: 'binary-ref',
+                  content: {
+                    chunkId: chunk.id,
+                    mimeType: binaryContent.mimeType,
+                    byteSize: binaryContent.data.byteLength,
+                  },
+                };
+              } else {
+                serializedChunk = {
+                  ...chunk,
+                  content: { ...chunk.content, data: Array.from((chunk.content as any).data) }
+                };
               }
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', chunk: serializedChunk })}
-\n`));
-            } catch (error) {
-              console.error('[SSE] Failed to serialize chunk:', chunk.id, error);
             }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'chunk', chunk: serializedChunk })}
+\n`));
+          } catch (error) {
+            console.error('[SSE] Failed to serialize chunk:', chunk.id, error);
           }
         },
         error: (err: Error) => {
