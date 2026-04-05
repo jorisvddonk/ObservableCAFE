@@ -6,7 +6,7 @@
  * Accepts text chunks containing URLs, parses them to clean text,
  * emits the text chunk, then generates voice audio for the article.
  * 
- * Runtime config (send null chunk with 'config.type: 'runtime''):
+ * Runtime config (send null chunk with 'config.type: 'runtime'', or pass in session creation):
  * {
  *   "config.voice": {
  *     "backend": "voicebox",
@@ -21,16 +21,42 @@ import type { Chunk } from '../lib/chunk.js';
 import { annotateChunk, createTextChunk } from '../lib/chunk.js';
 import { EMPTY, filter, map, mergeMap, catchError } from '../lib/stream.js';
 import { parseArticle } from '../evaluators/readability.js';
+import { detectLanguage } from '../evaluators/language-detection.js';
+import { translateToEnglish } from '../evaluators/translation.js';
 import { generateVoicePlain } from '../evaluators/voice-plain.js';
 
 const ARTICLEREADER_SYSTEM_PROMPT = `You are ArticleReader, a helpful agent that reads articles aloud. You take URLs, extract clean article content, and provide both text and voice versions for easy consumption.`;
 
 export const articleReaderAgent: AgentDefinition = {
   name: 'article-reader',
-  description: 'Reads articles from URLs, extracts clean text, and generates voice audio. Accepts URLs in text chunks.',
+  description: 'Reads articles from URLs, extracts clean text, translates non-English content to English, and generates voice audio. Accepts URLs in text chunks.',
   configSchema: {
     type: 'object',
     properties: {
+      backend: { type: 'string', description: 'LLM backend (kobold, ollama, or llamacpp)', default: 'ollama' },
+      model: { type: 'string', description: 'Model name' },
+      systemPrompt: { type: 'string', description: 'System prompt (overrides default ArticleReader prompt)', default: ARTICLEREADER_SYSTEM_PROMPT },
+      llmParams: {
+        type: 'object',
+        properties: {
+          temperature: { type: 'number', default: 0.7 },
+          maxTokens: { type: 'number', default: 500 },
+          topP: { type: 'number', default: 0.9 },
+          topK: { type: 'number', default: 40 },
+          repeatPenalty: { type: 'number', default: 1.1 },
+          stop: { type: 'array', items: { type: 'string' }, default: ['\nUser:', 'Assistant:'] },
+          seed: { type: 'number' },
+          maxContextLength: { type: 'number' },
+          numCtx: { type: 'number' },
+        },
+        default: {
+          temperature: 0.7,
+          maxTokens: 500,
+          topP: 0.9,
+          topK: 40,
+          repeatPenalty: 1.1
+        }
+      },
       voice: {
         type: 'object',
         description: 'Voice TTS configuration',
@@ -56,12 +82,22 @@ export const articleReaderAgent: AgentDefinition = {
       }
     },
     default: {
+      backend: 'ollama',
+      systemPrompt: ARTICLEREADER_SYSTEM_PROMPT,
+      llmParams: {
+        temperature: 0.7,
+        maxTokens: 500,
+        topP: 0.9,
+        topK: 40,
+        repeatPenalty: 1.1
+      },
       voice: {
         backend: 'voicebox',
         profile: 'ArticleReader',
         voicebox: { engine: 'qwen' }
       }
-    }
+    },
+    required: ['backend', 'model']
   },
 
   initialize(session: AgentSessionContext) {
@@ -99,10 +135,18 @@ export const articleReaderAgent: AgentDefinition = {
         // Emit the text chunk first
         session.outputStream.next(articleTextChunk);
 
-        // Annotate with voice config for TTS
-        const voicedChunk = annotateChunk(articleTextChunk, 'voice.config', session.runtimeConfig.voice);
+        return [articleTextChunk];
+      }),
 
-        return [voicedChunk];
+      // Detect language
+      mergeMap(detectLanguage(session)),
+
+      // Translate to English if needed
+      mergeMap(translateToEnglish(session)),
+
+      // Annotate with voice config for TTS
+      map((chunk: Chunk) => {
+        return annotateChunk(chunk, 'voice.config', session.runtimeConfig.voice);
       }),
 
       // Generate voice output

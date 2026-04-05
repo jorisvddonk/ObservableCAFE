@@ -75,6 +75,20 @@ export async function handleCreateSession(body?: any): Promise<Response> {
     if (body?.voice || defaults.voice) {
       runtimeConfig.voice = body?.voice || defaults.voice;
     }
+
+    // Handle flattened voice config fields (e.g., voice.profile, voice.backend)
+    if (runtimeConfig.voice && typeof runtimeConfig.voice === 'object') {
+      const voiceConfig = runtimeConfig.voice as any;
+      if (body?.['voice.backend']) voiceConfig.backend = body['voice.backend'];
+      if (body?.['voice.profile']) voiceConfig.profile = body['voice.profile'];
+      if (body?.['voice.ttsEndpoint']) voiceConfig.ttsEndpoint = body['voice.ttsEndpoint'];
+      if (body?.['voice.voicebox'] && typeof body['voice.voicebox'] === 'object') {
+        voiceConfig.voicebox = { ...voiceConfig.voicebox, ...body['voice.voicebox'] };
+      }
+      if (body?.['voice.coqui'] && typeof body['voice.coqui'] === 'object') {
+        voiceConfig.coqui = { ...voiceConfig.coqui, ...body['voice.coqui'] };
+      }
+    }
     if (body?.promptTemplate || defaults.promptTemplate) {
       runtimeConfig.promptTemplate = body?.promptTemplate || defaults.promptTemplate;
     }
