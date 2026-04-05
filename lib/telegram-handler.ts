@@ -869,6 +869,7 @@ export async function restoreTelegramSubscriptions(): Promise<void> {
   }
 }
 
+// ts-prune-ignore-next
 export function getTelegramState(): TelegramSubscriptions {
   return telegramState;
 }

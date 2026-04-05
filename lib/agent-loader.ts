@@ -140,6 +140,7 @@ export function listBackgroundAgents(): AgentDefinition[] {
   return Array.from(agents.values()).filter(a => a.startInBackground);
 }
 
+// ts-prune-ignore-next
 export function clearAgents(): void {
   agents.clear();
   loaded = false;

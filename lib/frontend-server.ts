@@ -113,7 +113,7 @@ export function getComponentFile(filename: string): string | null {
   }
 }
 
-export interface FrontendHandler {
+interface FrontendHandler {
   getHtml: (token?: string) => string;
   getJs: () => string;
   getCss: () => string;

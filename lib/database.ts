@@ -7,10 +7,6 @@ import { Database as Sqlite } from 'bun:sqlite';
 import { randomBytes, createHash } from 'crypto';
 import { join } from 'path';
 
-export interface DatabaseConfig {
-  dbPath: string;
-}
-
 export interface TrustedClient {
   id: number;
   token: string;

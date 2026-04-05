@@ -140,14 +140,6 @@ export function schedule(cronExpr: string, callback: () => void | Promise<void>)
   };
 }
 
-export function getScheduledJobs(): Array<{ id: string; cronExpr: string; nextRun: number | null }> {
-  return Array.from(scheduledJobs.values()).map(job => ({
-    id: job.id,
-    cronExpr: job.cronExpr,
-    nextRun: job.nextRun,
-  }));
-}
-
 export function clearAllScheduledJobs(): void {
   for (const job of scheduledJobs.values()) {
     if (job.intervalId) {
