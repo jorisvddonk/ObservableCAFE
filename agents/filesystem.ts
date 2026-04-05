@@ -50,4 +50,5 @@ ${getToolsSystemPrompt(FILE_TOOLS)}`;
   }
 };
 
+// ts-prune-ignore-next
 export default fileSystemAgent;

@@ -105,4 +105,5 @@ export const imageAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default imageAgent;

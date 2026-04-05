@@ -62,4 +62,5 @@ export const exampleFeaturesAgent: AgentDefinition = {
    }
 };
 
+// ts-prune-ignore-next
 export default exampleFeaturesAgent;

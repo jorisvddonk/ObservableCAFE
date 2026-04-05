@@ -391,4 +391,5 @@ export const diceAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default diceAgent;

@@ -227,4 +227,5 @@ export const sheetbotMonitorAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default sheetbotMonitorAgent;

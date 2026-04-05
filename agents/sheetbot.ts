@@ -355,4 +355,5 @@ async function handleLibrary(api: SheetbotAPI): Promise<Chunk[]> {
   return [createResponseChunk(lines.join('\n'), true)];
 }
 
+// ts-prune-ignore-next
 export default sheetbotTaskCreatorAgent;

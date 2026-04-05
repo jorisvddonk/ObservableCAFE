@@ -164,4 +164,5 @@ export const rssSummarizerAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default rssSummarizerAgent;

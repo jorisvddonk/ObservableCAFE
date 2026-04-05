@@ -98,4 +98,5 @@ export const defaultAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default defaultAgent;

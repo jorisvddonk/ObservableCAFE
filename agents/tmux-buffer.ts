@@ -230,4 +230,5 @@ ${content}`;
   }
 };
 
+// ts-prune-ignore-next
 export default tmuxBufferAgent;

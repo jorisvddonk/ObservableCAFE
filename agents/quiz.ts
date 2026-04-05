@@ -237,4 +237,5 @@ export const quizAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default quizAgent;

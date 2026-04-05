@@ -165,4 +165,5 @@ export const articleReaderAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default articleReaderAgent;

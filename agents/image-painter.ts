@@ -115,4 +115,5 @@ function createRandomBmp(width: number, height: number): Uint8Array {
   return buffer;
 }
 
+// ts-prune-ignore-next
 export default imagePainterAgent;

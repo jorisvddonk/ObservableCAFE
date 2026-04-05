@@ -835,4 +835,5 @@ Provide the complete updated TypeScript code.`;
   }
 };
 
+// ts-prune-ignore-next
 export default agentFactory;

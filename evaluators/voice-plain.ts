@@ -159,4 +159,5 @@ export function generateVoicePlain(session: AgentSessionContext) {
   };
 }
 
+// ts-prune-ignore-next
 export default generateVoicePlain;

@@ -104,4 +104,5 @@ function writeString(view: DataView, offset: number, str: string) {
   }
 }
 
+// ts-prune-ignore-next
 export default audioGeneratorAgent;

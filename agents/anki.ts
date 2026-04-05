@@ -637,4 +637,5 @@ Current session:
   },
 };
 
+// ts-prune-ignore-next
 export default ankiAgent;

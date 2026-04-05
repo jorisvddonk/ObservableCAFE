@@ -206,4 +206,5 @@ export const volitionAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default volitionAgent;

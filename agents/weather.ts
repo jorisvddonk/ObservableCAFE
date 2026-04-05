@@ -225,4 +225,5 @@ ${WEATHER_SYSTEM_PROMPT}`;
   }
 };
 
+// ts-prune-ignore-next
 export default weatherAgent;

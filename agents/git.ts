@@ -239,4 +239,5 @@ function processWithLLM(chunk: Chunk, session: AgentSessionContext, cwd: string)
   );
 }
 
+// ts-prune-ignore-next
 export default gitAgent;

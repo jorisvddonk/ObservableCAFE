@@ -249,4 +249,5 @@ async function generateTTS(
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+// ts-prune-ignore-next
 export default generateVoice;

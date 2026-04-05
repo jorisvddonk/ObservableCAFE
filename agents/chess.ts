@@ -337,4 +337,5 @@ To move, enter algebraic notation:
   }
 };
 
+// ts-prune-ignore-next
 export default chessAgent;

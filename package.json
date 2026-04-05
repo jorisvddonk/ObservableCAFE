@@ -10,7 +10,9 @@
     "cli": "bun run cli.ts",
     "tui": "bun run tui.ts",
     "test": "bun run test.ts",
-    "test-tools": "bun run test-tools.js"
+    "test-tools": "bun run test-tools.js",
+    "lint": "eslint .",
+    "dead-code": "ts-prune 2>&1 | grep -Ev ' default$|\\(used in module\\)'"
   },
   "dependencies": {
     "@mariozechner/pi-tui": "^0.55.3",
@@ -26,6 +28,10 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^10.2.0",
+    "ts-prune": "^0.10.3"
   }
 }

@@ -95,4 +95,5 @@ export const handyTranscriberAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default handyTranscriberAgent;

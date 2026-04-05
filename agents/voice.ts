@@ -118,4 +118,5 @@ export const voiceAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default voiceAgent;

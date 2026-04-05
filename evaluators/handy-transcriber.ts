@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: HandyTranscriptionConfig = {
  * @param config Optional configuration for the transcription service
  * @returns Function that takes an audio chunk and returns an Observable of the annotated chunk
  */
+// ts-prune-ignore-next
 export function transcribeAndAnnotate(session: AgentSessionContext, config: HandyTranscriptionConfig = {}) {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   const apiUrl = `${mergedConfig.baseUrl}/v1/audio/transcriptions`;

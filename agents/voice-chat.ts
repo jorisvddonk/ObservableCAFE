@@ -148,4 +148,5 @@ export const voiceChatAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default voiceChatAgent;

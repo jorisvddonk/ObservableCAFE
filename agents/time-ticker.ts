@@ -56,4 +56,5 @@ export const timeTickerAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default timeTickerAgent;

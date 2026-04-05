@@ -46,4 +46,5 @@ export const bashAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default bashAgent;

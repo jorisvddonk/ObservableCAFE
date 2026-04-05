@@ -221,4 +221,5 @@ export function convertToMp3(config: AudioConverterConfig = {}) {
   };
 }
 
+// ts-prune-ignore-next
 export default convertToMp3;

@@ -362,4 +362,5 @@ async function sendRequest(host: string, port: number, path: string, data?: any,
   });
 }
 
+// ts-prune-ignore-next
 export default generateImage;

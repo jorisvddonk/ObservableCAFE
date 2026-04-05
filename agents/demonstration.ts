@@ -522,4 +522,5 @@ export const demonstrationAgent: AgentDefinition = {
   }
 };
 
+// ts-prune-ignore-next
 export default demonstrationAgent;

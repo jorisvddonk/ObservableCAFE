@@ -210,4 +210,5 @@ function parsePlainMarkdown(text: string, offset: number): ParsedMarkdownItem[] 
   return items;
 }
 
+// ts-prune-ignore-next
 export default parseMarkdownForVoice;
