@@ -156,22 +156,34 @@ export async function handleCreateSession(body?: any): Promise<Response> {
 export async function handleListSessions(): Promise<Response> {
   const activeSessions = listActiveSessions();
   const allSessionIds = new Set(activeSessions.map(s => s.id));
-  
+
+  // Add message counts for active sessions
+  for (const session of activeSessions) {
+    const activeSession = getSession(session.id);
+    if (activeSession) {
+      session.messageCount = activeSession.history.filter(chunk =>
+        chunk.annotations?.['chat.role'] === 'user' || chunk.annotations?.['chat.role'] === 'assistant'
+      ).length;
+    }
+  }
+
   if (sessionStore) {
     const persistedSessions = await sessionStore.listAllSessions();
     for (const ps of persistedSessions) {
       if (!allSessionIds.has(ps.id)) {
+        const messageCount = await sessionStore.getMessageCount(ps.id);
         activeSessions.push({
           id: ps.id,
           agentName: ps.agentName,
           isBackground: ps.isBackground,
           displayName: ps.id === ps.agentName ? ps.agentName : undefined,
-          uiMode: ps.uiMode
+          uiMode: ps.uiMode,
+          messageCount
         });
       }
     }
   }
-  
+
   return new Response(JSON.stringify({ sessions: activeSessions }), {
     headers: { 'Content-Type': 'application/json' }
   });

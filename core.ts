@@ -605,7 +605,7 @@ export function listSessions(): string[] {
   return Array.from(sessions.keys());
 }
 
-export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean; displayName?: string; uiMode?: string }> {
+export function listActiveSessions(): Array<{ id: string; agentName: string; isBackground: boolean; displayName?: string; uiMode?: string; messageCount?: number }> {
   return Array.from(sessions.values()).map(s => ({
     id: s.id,
     agentName: s.agentName,

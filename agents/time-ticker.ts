@@ -38,7 +38,7 @@ export const timeTickerAgent: AgentDefinition = {
     
     emitTime();
     
-    const intervalId = setInterval(emitTime, 3600000);
+    const intervalId = setInterval(emitTime, 3600);
     
     session.pipelineSubscription = {
       unsubscribe: () => {

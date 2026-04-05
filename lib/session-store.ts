@@ -268,4 +268,16 @@ export class SessionStore {
     stmt.run(uiMode, Date.now(), sessionId);
     stmt.finalize();
   }
+
+  async getMessageCount(sessionId: string): Promise<number> {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM session_chunks
+      WHERE session_id = ? AND json_extract(chunk_json, '$.annotations."chat.role"') IN ('user', 'assistant')
+    `);
+
+    const result = stmt.get(sessionId) as { count: number } | undefined;
+    stmt.finalize();
+
+    return result?.count || 0;
+  }
 }

@@ -11,7 +11,11 @@ export class SessionsManager {
             console.log('[RXCAFE] loadSessions data:', data);
             
             if (data.sessions) {
-                this.chat.knownSessions = data.sessions;
+                this.chat.knownSessions = data.sessions.map(s => ({
+                    ...s,
+                    messageCount: s.messageCount || 0,
+                    newMessageCount: 0
+                }));
                 this.chat.renderSidebarSessionList();
 
                 if (this.chat.sessionsModal.style.display === 'flex') {
@@ -94,9 +98,20 @@ export class SessionsManager {
                 
                 if (data.chunks && data.chunks.length > 0) {
                     console.log(`[RXCAFE] Rendering ${data.chunks.length} history chunks`);
+                    let messageCount = 0;
                     for (const chunk of data.chunks) {
                         this.chat.addRawChunk(chunk);
                         this.chat.renderChunk(chunk);
+                        if (chunk.annotations?.['chat.role'] === 'user' || chunk.annotations?.['chat.role'] === 'assistant') {
+                            messageCount++;
+                        }
+                    }
+                    // Update message count for this session
+                    const session = this.chat.knownSessions.find(s => s.id === sessionId);
+                    if (session) {
+                        const oldCount = session.messageCount || 0;
+                        session.messageCount = messageCount;
+                        session.newMessageCount = 0; // Clear new messages since we're viewing it
                     }
                 }
                 
@@ -142,7 +157,9 @@ export class SessionsManager {
                     this.chat.knownSessions.push({
                         id: data.sessionId,
                         agentName: data.agentName,
-                        isBackground: data.isBackground
+                        isBackground: data.isBackground,
+                        messageCount: 0,
+                        newMessageCount: 0
                     });
                 }
                 

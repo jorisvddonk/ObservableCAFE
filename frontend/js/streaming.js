@@ -89,6 +89,16 @@ export class StreamingManager {
                 }
             }
 
+            // Update message count for new messages
+            if (role === 'user' || role === 'assistant') {
+                const session = chat.knownSessions.find(s => s.id === chat.sessionId);
+                if (session) {
+                    session.messageCount = (session.messageCount || 0) + 1;
+                    session.newMessageCount = 0; // Clear new messages since we're viewing it
+                    chat.renderSidebarSessionList();
+                }
+            }
+
             if (chat.chunkElements.has(chunk.id)) {
                 const el = chat.chunkElements.get(chunk.id);
                 if (el) {

@@ -315,6 +315,36 @@ body {
     flex-direction: column;
 }
 
+.sidebar-session-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sidebar-session-badges {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.sidebar-session-badge {
+    background-color: var(--secondary-color);
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+}
+
+.sidebar-session-badge-new {
+    background-color: var(--primary-color);
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+}
+
 .sidebar-session-name {
     font-weight: 600;
     font-size: 0.9rem;

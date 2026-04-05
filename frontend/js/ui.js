@@ -276,14 +276,29 @@ export class UIManager {
             const isCurrent = s.id === this.chat.sessionId;
             const displayName = s.displayName || s.agentName;
             const shortId = s.id.length > 20 ? '...' + s.id.slice(-6) : s.id;
-            
+            const messageCount = s.messageCount || 0;
+            const newMessageCount = s.newMessageCount || 0;
+
+            const badges = [];
+            if (messageCount > 0) {
+                badges.push(`<span class="sidebar-session-badge">${messageCount}</span>`);
+            }
+            if (newMessageCount > 0) {
+                badges.push(`<span class="sidebar-session-badge-new">${newMessageCount}</span>`);
+            }
+
             return `
                 <div class="sidebar-session-item ${isCurrent ? 'active' : ''}" onclick="chat.switchToSessionFromSidebar('${s.id}')">
                     <div class="sidebar-session-info">
                         <div class="sidebar-session-name">${displayName}${s.isBackground ? ' [bg]' : ''}</div>
                         <div class="sidebar-session-meta">${s.agentName} • ${shortId}</div>
                     </div>
-                    <button class="sidebar-session-more-btn" onclick="chat.showSidebarMenu(event, '${s.id}')">⋮</button>
+                    <div class="sidebar-session-right">
+                        <div class="sidebar-session-badges">
+                            ${badges.join('')}
+                        </div>
+                        <button class="sidebar-session-more-btn" onclick="chat.showSidebarMenu(event, '${s.id}')">⋮</button>
+                    </div>
                 </div>
             `;
         }).join('');
