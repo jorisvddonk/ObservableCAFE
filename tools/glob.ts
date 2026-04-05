@@ -1,6 +1,6 @@
 /**
  * Glob Tool
- * File pattern matching (e.g., **/*.ts, src/**/*.js)
+ * File pattern matching with wildcards
  * Supports: *, **, ? wildcards
  */
 
