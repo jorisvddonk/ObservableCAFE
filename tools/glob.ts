@@ -1,7 +1,7 @@
 /**
  * Glob Tool
  * File pattern matching with wildcards
- * Supports: *, **, ? wildcards
+ * Supports wildcards like *, **, ?
  */
 
 import { readdirSync, statSync } from 'fs';
