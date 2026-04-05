@@ -456,7 +456,7 @@ class RXCafeChat {
     }
 
     updateMessageContent(messageEl, content, annotations = {}) {
-        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
+        if (messageEl.tagName.toLowerCase() === 'rx-message-text') {
             messageEl.content = content;
             if (annotations && Object.keys(annotations).length > 0) {
                 messageEl.annotations = { ...messageEl.annotations, ...annotations };
@@ -491,7 +491,7 @@ class RXCafeChat {
     }
     
     showErrorInMessage(messageEl, error) {
-        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
+        if (messageEl.tagName.toLowerCase() === 'rx-message-text') {
             messageEl.content = `Error: ${error}`;
         }
     }

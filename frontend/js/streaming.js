@@ -95,9 +95,10 @@ export class StreamingManager {
                     if (chunk.annotations['com.rxcafe.example.sentiment']) {
                         chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
                     }
-                    if (chunk.contentType === 'text') {
+                    if (chunk.contentType === 'text' && el.tagName.toLowerCase() === 'rx-message-text') {
                         chat.updateMessageContent(el, chunk.content, chunk.annotations);
                     }
+                    // For widget chunks or other updates, just update the existing element
                 }
                 return;
             }
@@ -116,18 +117,8 @@ export class StreamingManager {
             const isChess = chunk.annotations?.['chess.fen'];
             const isAssistantText = role === 'assistant' && chunk.contentType === 'text' && !isFromConnectedAgent && !isChess;
 
-            if (isAssistantText) {
-                const assistantEl = chat.createMessageElement('assistant', chunk.content, chunk.annotations);
-                chat.messagesEl.appendChild(assistantEl);
-                chat.scrollToBottom();
-
-                chat.currentMessageEl = assistantEl;
-                assistantEl.dataset.chunkId = chunk.id;
-                chat.chunkElements.set(chunk.id, assistantEl);
-                chat.updateMessageContent(assistantEl, chunk.content, chunk.annotations);
-                chat.messagesManager.addQuickResponses(assistantEl, chunk);
-                return;
-            }
+            // Note: Streaming assistant messages are handled in handleStreamData for token events
+            // Non-streaming assistant messages are handled by renderChunk below
 
             const isError = chunk.contentType === 'null' && chunk.annotations?.['error.message'];
             if (isError) {
@@ -169,14 +160,14 @@ export class StreamingManager {
                     const chunkId = data.chunkId;
                     let assistantEl = chat.currentMessageEl;
 
-                    if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT' || assistantEl.role !== 'assistant') {
+                    if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT') {
                         if (chunkId && chat.chunkElements.has(chunkId)) {
                             assistantEl = chat.chunkElements.get(chunkId);
                             chat.currentMessageEl = assistantEl;
                         }
                     }
 
-                    if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT' || assistantEl.role !== 'assistant') {
+                    if (!assistantEl || assistantEl.tagName !== 'RX-MESSAGE-TEXT') {
                         assistantEl = chat.createMessageElement('assistant', '');
                         assistantEl.classList.add('streaming');
                         chat.messagesEl.appendChild(assistantEl);

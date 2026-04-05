@@ -17,530 +17,465 @@ import { RxVegaGraph } from '../widgets/rx-vega-graph.js';
 import { RxChess } from '../widgets/rx-chess.js';
 import { RxMessageError } from '../widgets/rx-message-error.js';
 
+// Constants for annotation keys and element names
+const ANNOTATIONS = {
+    CHAT_ROLE: 'chat.role',
+    PRODUCER: 'com.rxcafe.web-fetch',
+    WEB_SOURCE_URL: 'web.source-url',
+    CLIENT_TYPE: 'client.type',
+    VISUALIZER_TYPE: 'visualizer.type',
+    CODE_LANGUAGE: 'code.language',
+    DIFF_TYPE: 'diff.type',
+    WEATHER_DATA: 'weather.data',
+    VEGA_SPEC: 'vega.spec',
+    CHESS_FEN: 'chess.fen',
+    SESSION_NAME: 'session.name',
+    ERROR_MESSAGE: 'error.message',
+    TOOL_NAME: 'tool.name',
+    TOOL_RESULTS: 'tool.results',
+    TOOL_DETECTION: 'com.rxcafe.tool-detection',
+    SENTIMENT: 'com.rxcafe.example.sentiment',
+    QUICK_RESPONSES: 'com.rxcafe.quickResponses',
+    TRUST_LEVEL: 'security.trust-level',
+    IMAGE_DESCRIPTION: 'image.description',
+    AUDIO_DESCRIPTION: 'audio.description',
+    FILE_NAME: 'file.name',
+    DOCUMENT_FILENAME: 'document.filename',
+    DIFF_OLD_CONTENT: 'diff.oldContent',
+    DIFF_NEW_CONTENT: 'diff.newContent',
+    DIFF_OLD_FILENAME: 'diff.oldFilename',
+    DIFF_NEW_FILENAME: 'diff.newFilename',
+    DIFF_LANGUAGE: 'diff.language',
+    VISUALIZER_AGENT: 'visualizer.agent',
+    VISUALIZER_PIPELINE: 'visualizer.pipeline',
+    WEATHER_LOCATION: 'weather.location',
+    WEATHER_TIMEZONE: 'weather.timezone',
+    VEGA_TITLE: 'vega.title',
+    CHESS_TURN: 'chess.turn',
+    CHESS_IS_CHECK: 'chess.isCheck',
+    CHESS_GAME_OVER: 'chess.gameOver',
+    CHESS_WINNER: 'chess.winner',
+    CHESS_MOVE_HISTORY: 'chess.moveHistory',
+    CHESS_INVALID: 'chess.invalid',
+    CHESS_INVALID_MOVE: 'chess.invalidMove',
+    LLM_BACKEND: 'llm.backend'
+};
+
+const ELEMENT_TAGS = {
+    RX_MESSAGE_TEXT: 'rx-message-text',
+    RX_MESSAGE_CODE: 'rx-message-code',
+    RX_MESSAGE_DIFF: 'rx-message-diff',
+    RX_MESSAGE_VISUALIZATION: 'rx-message-visualization',
+    RX_MESSAGE_TOOL: 'rx-message-tool',
+    RX_MESSAGE_SYSTEM: 'rx-message-system',
+    RX_WEATHER: 'rx-weather',
+    RX_VEGA_GRAPH: 'rx-vega-graph',
+    RX_CHESS: 'rx-chess',
+    RX_MESSAGE_WEB: 'rx-message-web',
+    RX_MESSAGE_IMAGE: 'rx-message-image',
+    RX_MESSAGE_AUDIO: 'rx-message-audio',
+    RX_MESSAGE_FILE: 'rx-message-file',
+    RX_MESSAGE_ERROR: 'rx-message-error',
+    RX_QUICK_RESPONSES: 'rx-quick-responses'
+};
+
+const CONTENT_TYPES = {
+    BINARY_REF: 'binary-ref',
+    BINARY: 'binary',
+    NULL: 'null',
+    TEXT: 'text'
+};
+
+const ROLES = {
+    USER: 'user',
+    ASSISTANT: 'assistant',
+    SYSTEM: 'system'
+};
+
+const VISUALIZER_TYPES = {
+    RX_MARBLES: 'rx-marbles'
+};
+
+const CHESS_TURNS = {
+    WHITE: 'w',
+    BLACK: 'b'
+};
+
 export class MessagesManager {
     constructor(chat) {
         this.chat = chat;
     }
 
+    // Utility method to convert binary data to Uint8Array and create blob
+    convertBinaryDataToBlob(content, mimeType) {
+        if (!content || !content.data) {
+            throw new Error('Binary chunk missing data');
+        }
+
+        const { data } = content;
+        let uint8;
+
+        if (data instanceof Uint8Array) {
+            uint8 = data;
+        } else if (Array.isArray(data)) {
+            uint8 = new Uint8Array(data);
+        } else if (typeof data === 'object' && data !== null) {
+            if (data.type === 'Buffer' && Array.isArray(data.data)) {
+                uint8 = new Uint8Array(data.data);
+            } else {
+                uint8 = new Uint8Array(Object.values(data));
+            }
+        } else {
+            throw new Error('Invalid binary data format');
+        }
+
+        return new Blob([uint8], { type: mimeType });
+    }
+
+    // Utility method to set up binary reference properties on element
+    setupBinaryRef(element, chunk, sessionId) {
+        element.binaryRef = true;
+        element.byteSize = chunk.content.byteSize;
+        element.mimeType = chunk.content.mimeType;
+        element.chunkId = chunk.content.chunkId;
+        element.sessionId = sessionId;
+    }
+
+    // Utility method to create filename from annotations and mime type
+    getFilenameFromAnnotations(annotations, mimeType) {
+        return annotations?.[ANNOTATIONS.FILE_NAME] ||
+               annotations?.[ANNOTATIONS.DOCUMENT_FILENAME] ||
+               `file.${mimeType.split('/')[1] || 'bin'}`;
+    }
+
     renderChunk(chunk) {
-        const role = chunk.annotations?.['chat.role'];
-        const isWeb = chunk.producer === 'com.rxcafe.web-fetch' || chunk.annotations?.['web.source-url'];
-        const isSystem = role === 'system';
-        const isTelegram = chunk.annotations?.['client.type'] === 'telegram';
-        const isVisualization = chunk.annotations?.['visualizer.type'] === 'rx-marbles';
-        const isCode = chunk.annotations?.['code.language'];
-        const isDiff = chunk.annotations?.['diff.type'];
-        
-        if (!role && chunk.annotations?.['session.name']) {
+        // Handle special cases first
+        if (!chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] && chunk.annotations?.[ANNOTATIONS.SESSION_NAME]) {
             this.chat.chunkElements.set(chunk.id, null);
             return;
         }
-        
-        if (chunk.contentType === 'null' && chunk.annotations?.['error.message']) {
-            this.addErrorMessage(chunk);
-            return;
-        }
-        
-        if (isVisualization) {
-            this.addVisualizationMessage(chunk);
-            return;
-        }
 
-        if (isDiff) {
-            this.addDiffMessage(chunk);
-            return;
+        // For all other cases: create element, add to raw chunks, append to DOM
+        // Note: addRawChunk may have already been called (e.g., in history loading)
+        const existingIndex = this.chat.rawChunks.findIndex(c => c.id === chunk.id);
+        if (existingIndex === -1) {
+            this.chat.addRawChunk(chunk);
         }
+        const element = this.createElement(chunk);
 
-        if (isCode) {
-            this.addCodeMessage(chunk);
-            return;
-        }
+        if (element) {
+            this.chat.messagesEl.appendChild(element);
+            this.chat.chunkElements.set(chunk.id, element);
 
-        const isWeather = chunk.annotations?.['weather.data'];
-        if (isWeather) {
-            this.addWeatherMessage(chunk);
-            return;
-        }
+            // Handle text elements
+            if (element.tagName.toLowerCase() === 'rx-message-text') {
+                // Ensure content is properly set (for consistency with streaming)
+                this.chat.updateMessageContent(element, chunk.content, chunk.annotations);
 
-        const isVegaGraph = chunk.annotations?.['vega.spec'];
-        if (isVegaGraph) {
-            this.addVegaGraphMessage(chunk);
-            return;
-        }
-
-        const isChess = chunk.annotations?.['chess.fen'];
-        if (isChess) {
-            this.addChessMessage(chunk);
-            return;
-        }
-
-        console.log(`[RXCAFE] renderChunk id=${chunk.id} role=${role} content="${String(chunk.content ?? '').slice(0,60)}"`);
-        
-        if (chunk.contentType === 'binary-ref') {
-            const mimeType = chunk.content?.mimeType || '';
-            if (mimeType.startsWith('image/')) {
-                this.addImageMessage(role || 'assistant', chunk);
-            } else if (mimeType.startsWith('audio/')) {
-                this.addAudioMessage(role || 'assistant', chunk);
-            } else {
-                this.addFileMessage(role || 'assistant', chunk);
-            }
-            return;
-        }
-
-        if (chunk.contentType === 'binary') {
-            const mimeType = chunk.content?.mimeType || '';
-            console.log(`[RXCAFE] Rendering binary chunk, mimeType: ${mimeType}, role: ${role}`);
-            if (mimeType.startsWith('image/')) {
-                console.log('[RXCAFE] Calling addImageMessage');
-                this.addImageMessage(role || 'assistant', chunk);
-            } else if (mimeType.startsWith('audio/')) {
-                console.log('[RXCAFE] Calling addAudioMessage');
-                this.addAudioMessage(role || 'assistant', chunk);
-            } else {
-                console.log('[RXCAFE] Calling addFileMessage');
-                this.addFileMessage(role || 'assistant', chunk);
-            }
-            return;
-        }
-
-        if (isWeb) {
-            this.addWebChunk(chunk);
-        } else if (isSystem) {
-            this.addSystemChunk(chunk, chunk.content);
-        } else if (chunk.contentType === 'text') {
-            if (role === 'user') {
-                const el = this.chat.addMessage('user', chunk.content, chunk.id, chunk.annotations);
-                
-                if (isTelegram) {
-                    this.addTelegramLabel(el);
+                // Add quick responses for assistant text messages
+                if (chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.ASSISTANT) {
+                    this.addQuickResponses(element, chunk);
                 }
+            } else {
+                scrollToBottom(this.chat.messagesEl);
+            }
+        }
+    }
 
-                if (chunk.annotations && chunk.annotations['com.rxcafe.example.sentiment']) {
-                    this.chat.updateSentiment(el, chunk.annotations['com.rxcafe.example.sentiment']);
-                }
 
-                this.addQuickResponses(el, chunk);
-            } else if (role === 'assistant') {
-                if (chunk.annotations?.['tool.name']) {
-                    this.addToolCallMessage(chunk);
-                } else {
-                    const el = this.chat.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
-                    if (chunk.annotations?.['com.rxcafe.tool-detection']?.hasToolCalls) {
-                        this.addToolCallIndicator(el, chunk.annotations['com.rxcafe.tool-detection'].toolCalls);
+    createElement(chunk) {
+        // Unified element creation for all widget types
+        // Returns configured element without DOM operations
+
+        if (chunk.contentType === CONTENT_TYPES.BINARY_REF || chunk.contentType === CONTENT_TYPES.BINARY) {
+            const mimeType = chunk.content?.mimeType || '';
+            const role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
+            const isRef = chunk.contentType === CONTENT_TYPES.BINARY_REF;
+
+            try {
+                if (mimeType.startsWith('image/')) {
+                    const imageEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_IMAGE);
+                    this.chat._elCounter++;
+                    imageEl.dataset.elId = this.chat._elCounter;
+                    imageEl.role = role;
+                    imageEl.alt = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || 'Generated image';
+                    imageEl.description = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || '';
+                    imageEl.chunkId = chunk.id;
+
+                    if (isRef) {
+                        this.setupBinaryRef(imageEl, chunk, this.chat.sessionId);
+                    } else {
+                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+                        imageEl.src = URL.createObjectURL(blob);
                     }
-                    this.addQuickResponses(el, chunk);
+
+                    return imageEl;
+                } else if (mimeType.startsWith('audio/')) {
+                    const audioEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_AUDIO);
+                    this.chat._elCounter++;
+                    audioEl.dataset.elId = this.chat._elCounter;
+                    audioEl.role = role;
+                    audioEl.description = chunk.annotations?.[ANNOTATIONS.AUDIO_DESCRIPTION] || '';
+                    audioEl.chunkId = chunk.id;
+
+                    if (isRef) {
+                        this.setupBinaryRef(audioEl, chunk, this.chat.sessionId);
+                    } else {
+                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+                        const url = URL.createObjectURL(blob);
+                        audioEl.src = url;
+                    }
+
+                    return audioEl;
+                } else {
+                    const fileEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_FILE);
+                    this.chat._elCounter++;
+                    fileEl.dataset.elId = this.chat._elCounter;
+                    fileEl.role = role;
+                    fileEl.chunkId = chunk.id;
+
+                    if (isRef) {
+                        this.setupBinaryRef(fileEl, chunk, this.chat.sessionId);
+                        fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
+                        fileEl.size = chunk.content.byteSize;
+                    } else {
+                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+                        const url = URL.createObjectURL(blob);
+                        fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
+                        fileEl.mimeType = chunk.content.mimeType;
+                        fileEl.size = blob.size;
+                        fileEl.dataUrl = url;
+                    }
+
+                    return fileEl;
                 }
+            } catch (error) {
+                console.error('[RXCAFE] Failed to create binary element:', error);
+                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+                this.chat._elCounter++;
+                errorEl.dataset.elId = this.chat._elCounter;
+                errorEl.message = `Failed to render binary content: ${error.message}`;
+                errorEl.backend = '';
+                errorEl.chunkId = chunk.id;
+                return errorEl;
             }
         }
-    }
 
-    addCodeMessage(chunk) {
-        this.chat.addRawChunk(chunk);
-        
-        const codeEl = document.createElement('rx-message-code');
-        this.chat._elCounter++;
-        codeEl.dataset.elId = this.chat._elCounter;
-        codeEl.content = chunk.content || '';
-        codeEl.language = chunk.annotations?.['code.language'] || '';
-        codeEl.filename = chunk.annotations?.['code.filename'] || '';
-        codeEl.chunkId = chunk.id;
-        codeEl.role = chunk.annotations?.['chat.role'] || 'assistant';
-        
-        codeEl.addEventListener('code-contextmenu', (e) => {
-            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-        });
-        
-        this.chat.messagesEl.appendChild(codeEl);
-        this.chat.chunkElements.set(chunk.id, codeEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
-
-    addDiffMessage(chunk) {
-        this.chat.addRawChunk(chunk);
-        
-        const diffEl = document.createElement('rx-message-diff');
-        this.chat._elCounter++;
-        diffEl.dataset.elId = this.chat._elCounter;
-        diffEl.oldContent = chunk.annotations?.['diff.oldContent'] || '';
-        diffEl.newContent = chunk.annotations?.['diff.newContent'] || chunk.content || '';
-        diffEl.oldFilename = chunk.annotations?.['diff.oldFilename'] || '';
-        diffEl.newFilename = chunk.annotations?.['diff.newFilename'] || '';
-        diffEl.language = chunk.annotations?.['diff.language'] || '';
-        diffEl.diffType = chunk.annotations?.['diff.type'] || 'unified';
-        diffEl.chunkId = chunk.id;
-        diffEl.role = chunk.annotations?.['chat.role'] || 'assistant';
-        
-        diffEl.addEventListener('diff-contextmenu', (e) => {
-            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-        });
-        
-        this.chat.messagesEl.appendChild(diffEl);
-        this.chat.chunkElements.set(chunk.id, diffEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
-
-    addVisualizationMessage(chunk) {
-        const vizEl = document.createElement('rx-message-visualization');
-        this.chat._elCounter++;
-        vizEl.dataset.elId = this.chat._elCounter;
-
-        // Store data on element immediately (before custom element upgrade)
-        vizEl._initialData = {
-            chunkId: chunk.id,
-            agentName: chunk.annotations?.['visualizer.agent'] || 'Unknown',
-            pipeline: chunk.annotations?.['visualizer.pipeline'],
-            chunks: this.chat.rawChunks
-        };
-
-        vizEl.addEventListener('viz-contextmenu', (e) => {
-            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-        });
-
-        this.chat.messagesEl.appendChild(vizEl);
-        this.chat.chunkElements.set(chunk.id, vizEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
-
-    addTelegramLabel(messageEl) {
-        if (!messageEl || messageEl.tagName !== 'RX-MESSAGE-TEXT') return;
-        const annotations = messageEl.annotations || {};
-        if (!annotations['client.type']) {
-            messageEl.annotations = { ...annotations, 'client.type': 'telegram' };
-        }
-    }
-
-    addToolCallMessage(chunk) {
-        const toolName = chunk.annotations?.['tool.name'];
-        const toolResult = chunk.annotations?.['tool.results'];
-        const toolDetection = chunk.annotations?.['com.rxcafe.tool-detection'];
-
-        const toolEl = document.createElement('rx-message-tool');
-        this.chat._elCounter++;
-        toolEl.dataset.elId = this.chat._elCounter;
-        toolEl.toolName = toolName || 'Unknown Tool';
-        toolEl.toolResult = toolResult;
-        toolEl.toolCalls = toolDetection?.toolCalls || [];
-        toolEl.content = chunk.content || '';
-        toolEl.chunkId = chunk.id;
-
-        this.chat.messagesEl.appendChild(toolEl);
-        this.chat.chunkElements.set(chunk.id, toolEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
-
-    addToolCallIndicator(messageEl, toolCalls) {
-        if (!messageEl || !toolCalls?.length || messageEl.tagName !== 'RX-MESSAGE-TEXT') return;
-
-        const annotations = messageEl.annotations || {};
-        const existingIndicators = annotations['toolCallIndicators'] || [];
-        messageEl.annotations = { 
-            ...annotations, 
-            'toolCallIndicators': [...existingIndicators, ...toolCalls]
-        };
-    }
-
-    addSystemChunk(chunk, prompt) {
-        this.chat.addRawChunk(chunk);
-
-        const systemEl = document.createElement('rx-message-system');
-        systemEl.content = prompt;
-        systemEl.chunkId = chunk.id;
-        systemEl.type = 'system-prompt';
-
-        this.chat.messagesEl.appendChild(systemEl);
-        this.chat.chunkElements.set(chunk.id, systemEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
-
-    addWeatherMessage(chunk) {
-        this.chat.addRawChunk(chunk);
-
-        try {
-            const weatherData = JSON.parse(chunk.content);
-            const location = chunk.annotations?.['weather.location'] || '';
-            const timezone = chunk.annotations?.['weather.timezone'] || '';
-
-            const weatherEl = document.createElement('rx-weather');
+        if (chunk.annotations?.[ANNOTATIONS.CODE_LANGUAGE]) {
+            const codeEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_CODE);
             this.chat._elCounter++;
-            weatherEl.dataset.elId = this.chat._elCounter;
-            weatherEl.weatherData = weatherData;
-            weatherEl.location = location;
-            weatherEl.timezone = timezone;
-            weatherEl.chunkId = chunk.id;
+            codeEl.dataset.elId = this.chat._elCounter;
+            codeEl.content = chunk.content || '';
+            codeEl.language = chunk.annotations?.[ANNOTATIONS.CODE_LANGUAGE] || '';
+            codeEl.filename = chunk.annotations?.['code.filename'] || '';
+            codeEl.chunkId = chunk.id;
+            codeEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
 
-            this.chat.messagesEl.appendChild(weatherEl);
-            this.chat.chunkElements.set(chunk.id, weatherEl);
-            scrollToBottom(this.chat.messagesEl);
-        } catch (e) {
-            console.error('[RXCAFE] Failed to parse weather data:', e);
-            this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
-        }
-    }
-
-    addVegaGraphMessage(chunk) {
-        this.chat.addRawChunk(chunk);
-
-        try {
-            const spec = chunk.annotations?.['vega.spec'];
-            const title = chunk.annotations?.['vega.title'] || 'Vega Graph';
-
-            const vegaEl = document.createElement('rx-vega-graph');
-            this.chat._elCounter++;
-            vegaEl.dataset.elId = this.chat._elCounter;
-            vegaEl._initialData = {
-                chunkId: chunk.id,
-                spec: spec,
-                title: title
-            };
-
-            vegaEl.addEventListener('vega-contextmenu', (e) => {
+            codeEl.addEventListener('code-contextmenu', (e) => {
                 this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
             });
 
-            this.chat.messagesEl.appendChild(vegaEl);
-            this.chat.chunkElements.set(chunk.id, vegaEl);
-            scrollToBottom(this.chat.messagesEl);
-        } catch (e) {
-            console.error('[RXCAFE] Failed to render vega graph:', e);
-            this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
+            return codeEl;
         }
-    }
 
-    addChessMessage(chunk) {
-        this.chat.addRawChunk(chunk);
-
-        try {
-            const fen = chunk.annotations?.['chess.fen'];
-            const turn = chunk.annotations?.['chess.turn'] || 'w';
-            const isCheck = chunk.annotations?.['chess.isCheck'] || false;
-            const gameOver = chunk.annotations?.['chess.gameOver'] || false;
-            const winner = chunk.annotations?.['chess.winner'] || null;
-            const moveHistory = chunk.annotations?.['chess.moveHistory'] || [];
-            const invalidMove = chunk.annotations?.['chess.invalid'] ? chunk.annotations['chess.invalidMove'] || 'Invalid move' : '';
-
-            const existingEl = this.chat.chunkElements.get(chunk.id);
-            if (existingEl) {
-                existingEl.fen = fen;
-                existingEl.currentPlayer = turn === 'w' ? 'white' : 'black';
-                existingEl.isCheck = isCheck;
-                existingEl.gameOver = gameOver;
-                existingEl.winner = winner;
-                existingEl.moveHistory = moveHistory;
-                existingEl.invalidMove = invalidMove;
-                return;
-            }
-
-            const chessEl = document.createElement('rx-chess');
+        if (chunk.annotations?.[ANNOTATIONS.DIFF_TYPE]) {
+            const diffEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_DIFF);
             this.chat._elCounter++;
-            chessEl.dataset.elId = this.chat._elCounter;
-            chessEl.fen = fen;
-            chessEl.currentPlayer = turn === 'w' ? 'white' : 'black';
-            chessEl.isCheck = isCheck;
-            chessEl.gameOver = gameOver;
-            chessEl.winner = winner;
-            chessEl.moveHistory = moveHistory;
-            chessEl.invalidMove = invalidMove;
-            chessEl.chunkId = chunk.id;
+            diffEl.dataset.elId = this.chat._elCounter;
+            diffEl.oldContent = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_CONTENT] || '';
+            diffEl.newContent = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_CONTENT] || chunk.content || '';
+            diffEl.oldFilename = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_FILENAME] || '';
+            diffEl.newFilename = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_FILENAME] || '';
+            diffEl.language = chunk.annotations?.[ANNOTATIONS.DIFF_LANGUAGE] || '';
+            diffEl.diffType = chunk.annotations?.[ANNOTATIONS.DIFF_TYPE] || 'unified';
+            diffEl.chunkId = chunk.id;
+            diffEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
 
-            this.chat.messagesEl.appendChild(chessEl);
-            this.chat.chunkElements.set(chunk.id, chessEl);
-            scrollToBottom(this.chat.messagesEl);
-        } catch (e) {
-            console.error('[RXCAFE] Failed to render chess board:', e);
-            this.addMessage('assistant', chunk.content, chunk.id, chunk.annotations);
+            diffEl.addEventListener('diff-contextmenu', (e) => {
+                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+            });
+
+            return diffEl;
         }
-    }
 
-    addWebChunk(chunk) {
-        this.chat.addRawChunk(chunk);
-        
-        const isTrusted = chunk.annotations?.['security.trust-level']?.trusted === true;
-        const sourceUrl = chunk.annotations?.['web.source-url'] || 'Unknown source';
-        
-        const webEl = document.createElement('rx-message-web');
-        webEl.content = chunk.content;
-        webEl.sourceUrl = sourceUrl;
-        webEl.trusted = isTrusted;
-        webEl.chunkId = chunk.id;
-        
-        webEl.addEventListener('trust-toggle', (e) => {
-            this.chat.toggleTrustFromButton(e.detail.chunkId, e.detail.trusted);
-        });
-        
-        this.chat.messagesEl.appendChild(webEl);
-        this.chat.chunkElements.set(chunk.id, webEl);
-        scrollToBottom(this.chat.messagesEl);
-        
-        if (!isTrusted) {
-            this.chat.addSystemMessage('Web content added but NOT trusted. Right-click and select "Trust Chunk" to include in LLM context, or click the Trust button.');
+        if (chunk.annotations?.[ANNOTATIONS.VISUALIZER_TYPE] === VISUALIZER_TYPES.RX_MARBLES) {
+            const vizEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_VISUALIZATION);
+            this.chat._elCounter++;
+            vizEl.dataset.elId = this.chat._elCounter;
+
+            vizEl._initialData = {
+                chunkId: chunk.id,
+                agentName: chunk.annotations?.[ANNOTATIONS.VISUALIZER_AGENT] || 'Unknown',
+                pipeline: chunk.annotations?.[ANNOTATIONS.VISUALIZER_PIPELINE],
+                chunks: this.chat.rawChunks
+            };
+
+            vizEl.addEventListener('viz-contextmenu', (e) => {
+                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+            });
+
+            return vizEl;
         }
-    }
 
-    addImageMessage(role, chunk) {
-        const imageEl = document.createElement('rx-message-image');
-        this.chat._elCounter++;
-        imageEl.dataset.elId = this.chat._elCounter;
-        imageEl.role = role;
-        imageEl.alt = chunk.annotations?.['image.description'] || 'Generated image';
-        imageEl.description = chunk.annotations?.['image.description'] || '';
-        imageEl.chunkId = chunk.id;
+        if (chunk.annotations?.[ANNOTATIONS.WEATHER_DATA]) {
+            try {
+                const weatherData = JSON.parse(chunk.content);
+                const location = chunk.annotations?.[ANNOTATIONS.WEATHER_LOCATION] || '';
+                const timezone = chunk.annotations?.[ANNOTATIONS.WEATHER_TIMEZONE] || '';
 
-        if (chunk.contentType === 'binary-ref') {
-            imageEl.binaryRef = true;
-            imageEl.byteSize = chunk.content.byteSize;
-            imageEl.mimeType = chunk.content.mimeType;
-            imageEl.chunkId = chunk.content.chunkId;
-            imageEl.sessionId = this.chat.sessionId;
-        } else {
-            if (!chunk.content || !chunk.content.data) {
-                console.error('[RXCAFE] Binary chunk missing data', chunk);
-                return;
+                const weatherEl = document.createElement(ELEMENT_TAGS.RX_WEATHER);
+                this.chat._elCounter++;
+                weatherEl.dataset.elId = this.chat._elCounter;
+                weatherEl.weatherData = weatherData;
+                weatherEl.location = location;
+                weatherEl.timezone = timezone;
+                weatherEl.chunkId = chunk.id;
+
+                return weatherEl;
+            } catch (e) {
+                console.error('[RXCAFE] Failed to create weather element:', e);
+                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+                this.chat._elCounter++;
+                errorEl.dataset.elId = this.chat._elCounter;
+                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to parse weather data';
+                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
+                errorEl.chunkId = chunk.id;
+                return errorEl;
             }
-            const { data, mimeType } = chunk.content;
-            let uint8;
-            if (data instanceof Uint8Array) {
-                uint8 = data;
-            } else if (Array.isArray(data)) {
-                uint8 = new Uint8Array(data);
-            } else if (typeof data === 'object' && data !== null) {
-                if (data.type === 'Buffer' && Array.isArray(data.data)) {
-                    uint8 = new Uint8Array(data.data);
-                } else {
-                    uint8 = new Uint8Array(Object.values(data));
-                }
-            } else {
-                console.error('[RXCAFE] Invalid image data format', data);
-                return;
-            }
-            const blob = new Blob([uint8], { type: mimeType });
-            imageEl.src = URL.createObjectURL(blob);
         }
 
-        this.chat.messagesEl.appendChild(imageEl);
-        this.chat.chunkElements.set(chunk.id, imageEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
+        if (chunk.annotations?.[ANNOTATIONS.VEGA_SPEC]) {
+            try {
+                const spec = chunk.annotations?.[ANNOTATIONS.VEGA_SPEC];
+                const title = chunk.annotations?.[ANNOTATIONS.VEGA_TITLE] || 'Vega Graph';
 
-    addAudioMessage(role, chunk) {
-        const audioEl = document.createElement('rx-message-audio');
-        this.chat._elCounter++;
-        audioEl.dataset.elId = this.chat._elCounter;
-        audioEl.role = role;
-        audioEl.description = chunk.annotations?.['audio.description'] || '';
-        audioEl.chunkId = chunk.id;
+                const vegaEl = document.createElement(ELEMENT_TAGS.RX_VEGA_GRAPH);
+                this.chat._elCounter++;
+                vegaEl.dataset.elId = this.chat._elCounter;
+                vegaEl._initialData = {
+                    chunkId: chunk.id,
+                    spec: spec,
+                    title: title
+                };
 
-        if (chunk.contentType === 'binary-ref') {
-            audioEl.binaryRef = true;
-            audioEl.byteSize = chunk.content.byteSize;
-            audioEl.mimeType = chunk.content.mimeType;
-            audioEl.chunkId = chunk.content.chunkId;
-            audioEl.sessionId = this.chat.sessionId;
-        } else {
-            if (!chunk.content || !chunk.content.data) {
-                console.error('[RXCAFE] Binary chunk missing data', chunk);
-                return;
+                vegaEl.addEventListener('vega-contextmenu', (e) => {
+                    this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+                });
+
+                return vegaEl;
+            } catch (e) {
+                console.error('[RXCAFE] Failed to create vega graph element:', e);
+                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+                this.chat._elCounter++;
+                errorEl.dataset.elId = this.chat._elCounter;
+                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render vega graph';
+                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
+                errorEl.chunkId = chunk.id;
+                return errorEl;
             }
-            const { data, mimeType } = chunk.content;
-            let uint8;
-            if (data instanceof Uint8Array) {
-                uint8 = data;
-            } else if (Array.isArray(data)) {
-                uint8 = new Uint8Array(data);
-            } else if (typeof data === 'object' && data !== null) {
-                if (data.type === 'Buffer' && Array.isArray(data.data)) {
-                    uint8 = new Uint8Array(data.data);
-                } else {
-                    uint8 = new Uint8Array(Object.values(data));
-                }
-            } else {
-                console.error('[RXCAFE] Invalid audio data format', data);
-                return;
-            }
-            const blob = new Blob([uint8], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            console.log(`[RXCAFE] Created audio blob URL: ${url} (size: ${blob.size} bytes, type: ${mimeType})`);
-            audioEl.src = url;
         }
 
-        this.chat.messagesEl.appendChild(audioEl);
-        this.chat.chunkElements.set(chunk.id, audioEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
+        if (chunk.annotations?.[ANNOTATIONS.CHESS_FEN]) {
+            try {
+                const fen = chunk.annotations?.[ANNOTATIONS.CHESS_FEN];
+                const turn = chunk.annotations?.[ANNOTATIONS.CHESS_TURN] || CHESS_TURNS.WHITE;
+                const isCheck = chunk.annotations?.[ANNOTATIONS.CHESS_IS_CHECK] || false;
+                const gameOver = chunk.annotations?.[ANNOTATIONS.CHESS_GAME_OVER] || false;
+                const winner = chunk.annotations?.[ANNOTATIONS.CHESS_WINNER] || null;
+                const moveHistory = chunk.annotations?.[ANNOTATIONS.CHESS_MOVE_HISTORY] || [];
+                const invalidMove = chunk.annotations?.[ANNOTATIONS.CHESS_INVALID] ?
+                    chunk.annotations[ANNOTATIONS.CHESS_INVALID_MOVE] || 'Invalid move' : '';
 
-    addFileMessage(role, chunk) {
-        const fileEl = document.createElement('rx-message-file');
-        this.chat._elCounter++;
-        fileEl.dataset.elId = this.chat._elCounter;
-        fileEl.role = role;
-        fileEl.chunkId = chunk.id;
+                const chessEl = document.createElement(ELEMENT_TAGS.RX_CHESS);
+                this.chat._elCounter++;
+                chessEl.dataset.elId = this.chat._elCounter;
+                chessEl.fen = fen;
+                chessEl.currentPlayer = turn === CHESS_TURNS.WHITE ? 'white' : 'black';
+                chessEl.isCheck = isCheck;
+                chessEl.gameOver = gameOver;
+                chessEl.winner = winner;
+                chessEl.moveHistory = moveHistory;
+                chessEl.invalidMove = invalidMove;
+                chessEl.chunkId = chunk.id;
 
-        if (chunk.contentType === 'binary-ref') {
-            fileEl.binaryRef = true;
-            fileEl.byteSize = chunk.content.byteSize;
-            fileEl.mimeType = chunk.content.mimeType;
-            fileEl.chunkId = chunk.content.chunkId;
-            fileEl.sessionId = this.chat.sessionId;
-            fileEl.filename = chunk.annotations?.['file.name'] || chunk.annotations?.['document.filename'] || `file.${chunk.content.mimeType.split('/')[1] || 'bin'}`;
-            fileEl.size = chunk.content.byteSize;
-        } else {
-            if (!chunk.content || !chunk.content.data) {
-                console.error('[RXCAFE] Binary chunk missing data', chunk);
-                return;
+                return chessEl;
+            } catch (e) {
+                console.error('[RXCAFE] Failed to create chess element:', e);
+                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+                this.chat._elCounter++;
+                errorEl.dataset.elId = this.chat._elCounter;
+                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render chess board';
+                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
+                errorEl.chunkId = chunk.id;
+                return errorEl;
             }
-            const { data, mimeType } = chunk.content;
-            let uint8;
-            if (data instanceof Uint8Array) {
-                uint8 = data;
-            } else if (Array.isArray(data)) {
-                uint8 = new Uint8Array(data);
-            } else if (typeof data === 'object' && data !== null) {
-                if (data.type === 'Buffer' && Array.isArray(data.data)) {
-                    uint8 = new Uint8Array(data.data);
-                } else {
-                    uint8 = new Uint8Array(Object.values(data));
-                }
-            } else {
-                console.error('[RXCAFE] Invalid binary data format', data);
-                return;
-            }
-            const blob = new Blob([uint8], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-            fileEl.filename = chunk.annotations?.['file.name'] || chunk.annotations?.['document.filename'] || `file.${mimeType.split('/')[1] || 'bin'}`;
-            fileEl.mimeType = mimeType;
-            fileEl.size = blob.size;
-            fileEl.dataUrl = url;
         }
 
-        this.chat.messagesEl.appendChild(fileEl);
-        this.chat.chunkElements.set(chunk.id, fileEl);
-        scrollToBottom(this.chat.messagesEl);
-    }
+        if (chunk.producer === ANNOTATIONS.PRODUCER || chunk.annotations?.[ANNOTATIONS.WEB_SOURCE_URL]) {
+            const isTrusted = chunk.annotations?.[ANNOTATIONS.TRUST_LEVEL]?.trusted === true;
+            const sourceUrl = chunk.annotations?.[ANNOTATIONS.WEB_SOURCE_URL] || 'Unknown source';
 
-    addMessage(role, content, chunkId = null, annotations = {}) {
-        const messageEl = this.chat.createMessageElement(role, content, annotations);
-        console.log(`[RXCAFE] addMessage elId=${messageEl.dataset.elId} role=${role} chunkId=${chunkId}`);
-        if (chunkId) {
-            messageEl.dataset.chunkId = chunkId;
-            this.chat.chunkElements.set(chunkId, messageEl);
-        }
-        this.chat.messagesEl.appendChild(messageEl);
-        scrollToBottom(this.chat.messagesEl);
-        return messageEl;
-    }
+            const webEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_WEB);
+            webEl.content = chunk.content;
+            webEl.sourceUrl = sourceUrl;
+            webEl.trusted = isTrusted;
+            webEl.chunkId = chunk.id;
 
-    updateSentiment(messageEl, sentiment) {
-        if (!messageEl || !sentiment) return;
-        console.log('[RXCAFE] updateSentiment called for element:', messageEl.dataset.elId, sentiment);
-        
-        if (messageEl.tagName === 'RX-MESSAGE-TEXT') {
-            const annotations = messageEl.annotations || {};
-            messageEl.annotations = { ...annotations, 'com.rxcafe.example.sentiment': sentiment };
+            webEl.addEventListener('trust-toggle', (e) => {
+                this.chat.toggleTrustFromButton(e.detail.chunkId, e.detail.trusted);
+            });
+
+            return webEl;
         }
+
+        if (chunk.contentType === CONTENT_TYPES.NULL && chunk.annotations?.[ANNOTATIONS.ERROR_MESSAGE]) {
+            const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+            this.chat._elCounter++;
+            errorEl.dataset.elId = this.chat._elCounter;
+            errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Unknown error';
+            errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
+            errorEl.chunkId = chunk.id;
+
+            return errorEl;
+        }
+
+        if (chunk.annotations?.[ANNOTATIONS.TOOL_NAME]) {
+            const toolName = chunk.annotations?.[ANNOTATIONS.TOOL_NAME];
+            const toolResult = chunk.annotations?.[ANNOTATIONS.TOOL_RESULTS];
+            const toolDetection = chunk.annotations?.[ANNOTATIONS.TOOL_DETECTION];
+
+            const toolEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TOOL);
+            this.chat._elCounter++;
+            toolEl.dataset.elId = this.chat._elCounter;
+            toolEl.toolName = toolName || 'Unknown Tool';
+            toolEl.toolResult = toolResult;
+            toolEl.toolCalls = toolDetection?.toolCalls || [];
+            toolEl.content = chunk.content || '';
+            toolEl.chunkId = chunk.id;
+
+            return toolEl;
+        }
+
+        // Default case for regular text chunks (only render text content with chat role)
+        if (chunk.contentType === CONTENT_TYPES.TEXT && 
+            (chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.USER || 
+             chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.ASSISTANT)) {
+            const textEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TEXT);
+            this.chat._elCounter++;
+            textEl.dataset.elId = this.chat._elCounter;
+            textEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
+            textEl.content = chunk.content || '';
+            textEl.chunkId = chunk.id;
+            textEl.annotations = chunk.annotations || {};
+            return textEl;
+        }
+
+        // Don't render any other chunk types as elements
+        return null;
     }
 
     addQuickResponses(messageEl, chunk) {
-        const quickResponses = chunk.annotations?.['com.rxcafe.quickResponses'];
+        const quickResponses = chunk.annotations?.[ANNOTATIONS.QUICK_RESPONSES];
         if (!quickResponses || !Array.isArray(quickResponses) || quickResponses.length === 0) {
             return;
         }
@@ -551,7 +486,7 @@ export class MessagesManager {
             return;
         }
 
-        const quickResponsesEl = document.createElement('rx-quick-responses');
+        const quickResponsesEl = document.createElement(ELEMENT_TAGS.RX_QUICK_RESPONSES);
         quickResponsesEl.responses = quickResponses;
         quickResponsesEl.disabled = !this.chat.sessionId || this.chat.isGenerating;
         quickResponsesEl.id = existingId;
@@ -576,16 +511,14 @@ export class MessagesManager {
         }
     }
 
-    addErrorMessage(chunk) {
-        const errorEl = document.createElement('rx-message-error');
-        this.chat._elCounter++;
-        errorEl.dataset.elId = this.chat._elCounter;
-        errorEl.message = chunk.annotations['error.message'] || 'Unknown error';
-        errorEl.backend = chunk.annotations['llm.backend'] || '';
-        errorEl.chunkId = chunk.id;
-
-        this.chat.messagesEl.appendChild(errorEl);
-        this.chat.chunkElements.set(chunk.id, errorEl);
+    addMessage(role, content, chunkId = null, annotations = {}) {
+        const messageEl = this.chat.createMessageElement(role, content, annotations);
+        if (chunkId) {
+            messageEl.dataset.chunkId = chunkId;
+            this.chat.chunkElements.set(chunkId, messageEl);
+        }
+        this.chat.messagesEl.appendChild(messageEl);
         scrollToBottom(this.chat.messagesEl);
+        return messageEl;
     }
 }
