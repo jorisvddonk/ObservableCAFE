@@ -188,286 +188,50 @@ export class MessagesManager {
         // Returns configured element without DOM operations
 
         if (chunk.contentType === CONTENT_TYPES.BINARY_REF || chunk.contentType === CONTENT_TYPES.BINARY) {
-            const mimeType = chunk.content?.mimeType || '';
-            const role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
-            const isRef = chunk.contentType === CONTENT_TYPES.BINARY_REF;
-
-            try {
-                if (mimeType.startsWith('image/')) {
-                    const imageEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_IMAGE);
-                    this.chat._elCounter++;
-                    imageEl.dataset.elId = this.chat._elCounter;
-                    imageEl.role = role;
-                    imageEl.alt = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || 'Generated image';
-                    imageEl.description = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || '';
-                    imageEl.chunkId = chunk.id;
-
-                    if (isRef) {
-                        this.setupBinaryRef(imageEl, chunk, this.chat.sessionId);
-                    } else {
-                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
-                        imageEl.src = URL.createObjectURL(blob);
-                    }
-
-                    return imageEl;
-                } else if (mimeType.startsWith('audio/')) {
-                    const audioEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_AUDIO);
-                    this.chat._elCounter++;
-                    audioEl.dataset.elId = this.chat._elCounter;
-                    audioEl.role = role;
-                    audioEl.description = chunk.annotations?.[ANNOTATIONS.AUDIO_DESCRIPTION] || '';
-                    audioEl.chunkId = chunk.id;
-
-                    if (isRef) {
-                        this.setupBinaryRef(audioEl, chunk, this.chat.sessionId);
-                    } else {
-                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
-                        const url = URL.createObjectURL(blob);
-                        audioEl.src = url;
-                    }
-
-                    return audioEl;
-                } else {
-                    const fileEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_FILE);
-                    this.chat._elCounter++;
-                    fileEl.dataset.elId = this.chat._elCounter;
-                    fileEl.role = role;
-                    fileEl.chunkId = chunk.id;
-
-                    if (isRef) {
-                        this.setupBinaryRef(fileEl, chunk, this.chat.sessionId);
-                        fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
-                        fileEl.size = chunk.content.byteSize;
-                    } else {
-                        const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
-                        const url = URL.createObjectURL(blob);
-                        fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
-                        fileEl.mimeType = chunk.content.mimeType;
-                        fileEl.size = blob.size;
-                        fileEl.dataUrl = url;
-                    }
-
-                    return fileEl;
-                }
-            } catch (error) {
-                console.error('[RXCAFE] Failed to create binary element:', error);
-                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
-                this.chat._elCounter++;
-                errorEl.dataset.elId = this.chat._elCounter;
-                errorEl.message = `Failed to render binary content: ${error.message}`;
-                errorEl.backend = '';
-                errorEl.chunkId = chunk.id;
-                return errorEl;
-            }
+            return this._createBinaryElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.CODE_LANGUAGE]) {
-            const codeEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_CODE);
-            this.chat._elCounter++;
-            codeEl.dataset.elId = this.chat._elCounter;
-            codeEl.content = chunk.content || '';
-            codeEl.language = chunk.annotations?.[ANNOTATIONS.CODE_LANGUAGE] || '';
-            codeEl.filename = chunk.annotations?.['code.filename'] || '';
-            codeEl.chunkId = chunk.id;
-            codeEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
-
-            codeEl.addEventListener('code-contextmenu', (e) => {
-                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-            });
-
-            return codeEl;
+            return this._createCodeElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.DIFF_TYPE]) {
-            const diffEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_DIFF);
-            this.chat._elCounter++;
-            diffEl.dataset.elId = this.chat._elCounter;
-            diffEl.oldContent = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_CONTENT] || '';
-            diffEl.newContent = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_CONTENT] || chunk.content || '';
-            diffEl.oldFilename = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_FILENAME] || '';
-            diffEl.newFilename = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_FILENAME] || '';
-            diffEl.language = chunk.annotations?.[ANNOTATIONS.DIFF_LANGUAGE] || '';
-            diffEl.diffType = chunk.annotations?.[ANNOTATIONS.DIFF_TYPE] || 'unified';
-            diffEl.chunkId = chunk.id;
-            diffEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
-
-            diffEl.addEventListener('diff-contextmenu', (e) => {
-                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-            });
-
-            return diffEl;
+            return this._createDiffElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.VISUALIZER_TYPE] === VISUALIZER_TYPES.RX_MARBLES) {
-            const vizEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_VISUALIZATION);
-            this.chat._elCounter++;
-            vizEl.dataset.elId = this.chat._elCounter;
-
-            vizEl._initialData = {
-                chunkId: chunk.id,
-                agentName: chunk.annotations?.[ANNOTATIONS.VISUALIZER_AGENT] || 'Unknown',
-                pipeline: chunk.annotations?.[ANNOTATIONS.VISUALIZER_PIPELINE],
-                chunks: this.chat.rawChunks
-            };
-
-            vizEl.addEventListener('viz-contextmenu', (e) => {
-                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-            });
-
-            return vizEl;
+            return this._createVisualizationElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.WEATHER_DATA]) {
-            try {
-                const weatherData = JSON.parse(chunk.content);
-                const location = chunk.annotations?.[ANNOTATIONS.WEATHER_LOCATION] || '';
-                const timezone = chunk.annotations?.[ANNOTATIONS.WEATHER_TIMEZONE] || '';
-
-                const weatherEl = document.createElement(ELEMENT_TAGS.RX_WEATHER);
-                this.chat._elCounter++;
-                weatherEl.dataset.elId = this.chat._elCounter;
-                weatherEl.weatherData = weatherData;
-                weatherEl.location = location;
-                weatherEl.timezone = timezone;
-                weatherEl.chunkId = chunk.id;
-
-                return weatherEl;
-            } catch (e) {
-                console.error('[RXCAFE] Failed to create weather element:', e);
-                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
-                this.chat._elCounter++;
-                errorEl.dataset.elId = this.chat._elCounter;
-                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to parse weather data';
-                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
-                errorEl.chunkId = chunk.id;
-                return errorEl;
-            }
+            return this._createWeatherElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.VEGA_SPEC]) {
-            try {
-                const spec = chunk.annotations?.[ANNOTATIONS.VEGA_SPEC];
-                const title = chunk.annotations?.[ANNOTATIONS.VEGA_TITLE] || 'Vega Graph';
-
-                const vegaEl = document.createElement(ELEMENT_TAGS.RX_VEGA_GRAPH);
-                this.chat._elCounter++;
-                vegaEl.dataset.elId = this.chat._elCounter;
-                vegaEl._initialData = {
-                    chunkId: chunk.id,
-                    spec: spec,
-                    title: title
-                };
-
-                vegaEl.addEventListener('vega-contextmenu', (e) => {
-                    this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
-                });
-
-                return vegaEl;
-            } catch (e) {
-                console.error('[RXCAFE] Failed to create vega graph element:', e);
-                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
-                this.chat._elCounter++;
-                errorEl.dataset.elId = this.chat._elCounter;
-                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render vega graph';
-                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
-                errorEl.chunkId = chunk.id;
-                return errorEl;
-            }
+            return this._createVegaElement(chunk);
         }
 
         if (chunk.annotations?.[ANNOTATIONS.CHESS_FEN]) {
-            try {
-                const fen = chunk.annotations?.[ANNOTATIONS.CHESS_FEN];
-                const turn = chunk.annotations?.[ANNOTATIONS.CHESS_TURN] || CHESS_TURNS.WHITE;
-                const isCheck = chunk.annotations?.[ANNOTATIONS.CHESS_IS_CHECK] || false;
-                const gameOver = chunk.annotations?.[ANNOTATIONS.CHESS_GAME_OVER] || false;
-                const winner = chunk.annotations?.[ANNOTATIONS.CHESS_WINNER] || null;
-                const moveHistory = chunk.annotations?.[ANNOTATIONS.CHESS_MOVE_HISTORY] || [];
-                const invalidMove = chunk.annotations?.[ANNOTATIONS.CHESS_INVALID] ?
-                    chunk.annotations[ANNOTATIONS.CHESS_INVALID_MOVE] || 'Invalid move' : '';
-
-                const chessEl = document.createElement(ELEMENT_TAGS.RX_CHESS);
-                this.chat._elCounter++;
-                chessEl.dataset.elId = this.chat._elCounter;
-                chessEl.fen = fen;
-                chessEl.currentPlayer = turn === CHESS_TURNS.WHITE ? 'white' : 'black';
-                chessEl.isCheck = isCheck;
-                chessEl.gameOver = gameOver;
-                chessEl.winner = winner;
-                chessEl.moveHistory = moveHistory;
-                chessEl.invalidMove = invalidMove;
-                chessEl.chunkId = chunk.id;
-
-                return chessEl;
-            } catch (e) {
-                console.error('[RXCAFE] Failed to create chess element:', e);
-                const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
-                this.chat._elCounter++;
-                errorEl.dataset.elId = this.chat._elCounter;
-                errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render chess board';
-                errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
-                errorEl.chunkId = chunk.id;
-                return errorEl;
-            }
+            return this._createChessElement(chunk);
         }
 
         if (chunk.producer === ANNOTATIONS.PRODUCER || chunk.annotations?.[ANNOTATIONS.WEB_SOURCE_URL]) {
-            const isTrusted = chunk.annotations?.[ANNOTATIONS.TRUST_LEVEL]?.trusted === true;
-            const sourceUrl = chunk.annotations?.[ANNOTATIONS.WEB_SOURCE_URL] || 'Unknown source';
-
-            const webEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_WEB);
-            webEl.content = chunk.content;
-            webEl.sourceUrl = sourceUrl;
-            webEl.trusted = isTrusted;
-            webEl.chunkId = chunk.id;
-
-            webEl.addEventListener('trust-toggle', (e) => {
-                this.chat.toggleTrustFromButton(e.detail.chunkId, e.detail.trusted);
-            });
-
-            return webEl;
+            return this._createWebElement(chunk);
         }
 
         if (chunk.contentType === CONTENT_TYPES.NULL && chunk.annotations?.[ANNOTATIONS.ERROR_MESSAGE]) {
-            const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
-            this.chat._elCounter++;
-            errorEl.dataset.elId = this.chat._elCounter;
-            errorEl.message = chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Unknown error';
-            errorEl.backend = chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '';
-            errorEl.chunkId = chunk.id;
-
-            return errorEl;
+            return this._createErrorElement(chunk, chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Unknown error', chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '');
         }
 
         if (chunk.annotations?.[ANNOTATIONS.TOOL_NAME]) {
-            const toolName = chunk.annotations?.[ANNOTATIONS.TOOL_NAME];
-            const toolResult = chunk.annotations?.[ANNOTATIONS.TOOL_RESULTS];
-            const toolDetection = chunk.annotations?.[ANNOTATIONS.TOOL_DETECTION];
-
-            const toolEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TOOL);
-            this.chat._elCounter++;
-            toolEl.dataset.elId = this.chat._elCounter;
-            toolEl.toolName = toolName || 'Unknown Tool';
-            toolEl.toolResult = toolResult;
-            toolEl.toolCalls = toolDetection?.toolCalls || [];
-            toolEl.content = chunk.content || '';
-            toolEl.chunkId = chunk.id;
-
-            return toolEl;
+            return this._createToolElement(chunk);
         }
 
         // Default case for regular text chunks (only render text content with chat role)
-        if (chunk.contentType === CONTENT_TYPES.TEXT && 
-            (chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.USER || 
+        if (chunk.contentType === CONTENT_TYPES.TEXT &&
+            (chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.USER ||
              chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] === ROLES.ASSISTANT)) {
-            const textEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TEXT);
-            this.chat._elCounter++;
-            textEl.dataset.elId = this.chat._elCounter;
-            textEl.role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
-            textEl.content = chunk.content || '';
-            textEl.chunkId = chunk.id;
-            textEl.annotations = chunk.annotations || {};
-            return textEl;
+            return this._createTextElement(chunk);
         }
 
         // Don't render any other chunk types as elements
@@ -520,5 +284,253 @@ export class MessagesManager {
         this.chat.messagesEl.appendChild(messageEl);
         scrollToBottom(this.chat.messagesEl);
         return messageEl;
+    }
+
+    _setCommonProperties(el, chunkId, role = null) {
+        this.chat._elCounter++;
+        el.dataset.elId = this.chat._elCounter;
+        el.chunkId = chunkId;
+        if (role) el.role = role;
+    }
+
+    _createBinaryElement(chunk) {
+        const mimeType = chunk.content?.mimeType || '';
+        const role = chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT;
+        const isRef = chunk.contentType === CONTENT_TYPES.BINARY_REF;
+
+        try {
+            if (mimeType.startsWith('image/')) {
+                return this._createImageElement(chunk, isRef, mimeType, role);
+            } else if (mimeType.startsWith('audio/')) {
+                return this._createAudioElement(chunk, isRef, mimeType, role);
+            } else {
+                return this._createFileElement(chunk, isRef, mimeType, role);
+            }
+        } catch (error) {
+            console.error('[RXCAFE] Failed to create binary element:', error);
+            return this._createErrorElement(chunk, `Failed to render binary content: ${error.message}`, '');
+        }
+    }
+
+    _createImageElement(chunk, isRef, mimeType, role) {
+        const imageEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_IMAGE);
+        this._setCommonProperties(imageEl, chunk.id, role);
+        imageEl.alt = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || 'Generated image';
+        imageEl.description = chunk.annotations?.[ANNOTATIONS.IMAGE_DESCRIPTION] || '';
+
+        if (isRef) {
+            this.setupBinaryRef(imageEl, chunk, this.chat.sessionId);
+        } else {
+            const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+            imageEl.src = URL.createObjectURL(blob);
+        }
+
+        return imageEl;
+    }
+
+    _createAudioElement(chunk, isRef, mimeType, role) {
+        const audioEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_AUDIO);
+        this._setCommonProperties(audioEl, chunk.id, role);
+        audioEl.description = chunk.annotations?.[ANNOTATIONS.AUDIO_DESCRIPTION] || '';
+
+        if (isRef) {
+            this.setupBinaryRef(audioEl, chunk, this.chat.sessionId);
+        } else {
+            const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+            const url = URL.createObjectURL(blob);
+            audioEl.src = url;
+        }
+
+        return audioEl;
+    }
+
+    _createFileElement(chunk, isRef, mimeType, role) {
+        const fileEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_FILE);
+        this._setCommonProperties(fileEl, chunk.id, role);
+
+        if (isRef) {
+            this.setupBinaryRef(fileEl, chunk, this.chat.sessionId);
+            fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
+            fileEl.size = chunk.content.byteSize;
+        } else {
+            const blob = this.convertBinaryDataToBlob(chunk.content, chunk.content.mimeType);
+            const url = URL.createObjectURL(blob);
+            fileEl.filename = this.getFilenameFromAnnotations(chunk.annotations, chunk.content.mimeType);
+            fileEl.mimeType = chunk.content.mimeType;
+            fileEl.size = blob.size;
+            fileEl.dataUrl = url;
+        }
+
+        return fileEl;
+    }
+
+    _createCodeElement(chunk) {
+        const codeEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_CODE);
+        this._setCommonProperties(codeEl, chunk.id, chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT);
+        codeEl.content = chunk.content || '';
+        codeEl.language = chunk.annotations?.[ANNOTATIONS.CODE_LANGUAGE] || '';
+        codeEl.filename = chunk.annotations?.['code.filename'] || '';
+
+        codeEl.addEventListener('code-contextmenu', (e) => {
+            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+        });
+
+        return codeEl;
+    }
+
+    _createDiffElement(chunk) {
+        const diffEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_DIFF);
+        this._setCommonProperties(diffEl, chunk.id, chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT);
+        diffEl.oldContent = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_CONTENT] || '';
+        diffEl.newContent = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_CONTENT] || chunk.content || '';
+        diffEl.oldFilename = chunk.annotations?.[ANNOTATIONS.DIFF_OLD_FILENAME] || '';
+        diffEl.newFilename = chunk.annotations?.[ANNOTATIONS.DIFF_NEW_FILENAME] || '';
+        diffEl.language = chunk.annotations?.[ANNOTATIONS.DIFF_LANGUAGE] || '';
+        diffEl.diffType = chunk.annotations?.[ANNOTATIONS.DIFF_TYPE] || 'unified';
+
+        diffEl.addEventListener('diff-contextmenu', (e) => {
+            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+        });
+
+        return diffEl;
+    }
+
+    _createVisualizationElement(chunk) {
+        const vizEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_VISUALIZATION);
+        this._setCommonProperties(vizEl, chunk.id);
+
+        vizEl._initialData = {
+            chunkId: chunk.id,
+            agentName: chunk.annotations?.[ANNOTATIONS.VISUALIZER_AGENT] || 'Unknown',
+            pipeline: chunk.annotations?.[ANNOTATIONS.VISUALIZER_PIPELINE],
+            chunks: this.chat.rawChunks
+        };
+
+        vizEl.addEventListener('viz-contextmenu', (e) => {
+            this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+        });
+
+        return vizEl;
+    }
+
+    _createWeatherElement(chunk) {
+        try {
+            const weatherData = JSON.parse(chunk.content);
+            const location = chunk.annotations?.[ANNOTATIONS.WEATHER_LOCATION] || '';
+            const timezone = chunk.annotations?.[ANNOTATIONS.WEATHER_TIMEZONE] || '';
+
+            const weatherEl = document.createElement(ELEMENT_TAGS.RX_WEATHER);
+            this._setCommonProperties(weatherEl, chunk.id);
+            weatherEl.weatherData = weatherData;
+            weatherEl.location = location;
+            weatherEl.timezone = timezone;
+
+            return weatherEl;
+        } catch (e) {
+            console.error('[RXCAFE] Failed to create weather element:', e);
+            return this._createErrorElement(chunk, chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to parse weather data', chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '');
+        }
+    }
+
+    _createVegaElement(chunk) {
+        try {
+            const spec = chunk.annotations?.[ANNOTATIONS.VEGA_SPEC];
+            const title = chunk.annotations?.[ANNOTATIONS.VEGA_TITLE] || 'Vega Graph';
+
+            const vegaEl = document.createElement(ELEMENT_TAGS.RX_VEGA_GRAPH);
+            this._setCommonProperties(vegaEl, chunk.id);
+            vegaEl._initialData = {
+                chunkId: chunk.id,
+                spec: spec,
+                title: title
+            };
+
+            vegaEl.addEventListener('vega-contextmenu', (e) => {
+                this.chat.showContextMenu(e.detail.originalEvent, e.detail.chunkId);
+            });
+
+            return vegaEl;
+        } catch (e) {
+            console.error('[RXCAFE] Failed to create vega graph element:', e);
+            return this._createErrorElement(chunk, chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render vega graph', chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '');
+        }
+    }
+
+    _createChessElement(chunk) {
+        try {
+            const fen = chunk.annotations?.[ANNOTATIONS.CHESS_FEN];
+            const turn = chunk.annotations?.[ANNOTATIONS.CHESS_TURN] || CHESS_TURNS.WHITE;
+            const isCheck = chunk.annotations?.[ANNOTATIONS.CHESS_IS_CHECK] || false;
+            const gameOver = chunk.annotations?.[ANNOTATIONS.CHESS_GAME_OVER] || false;
+            const winner = chunk.annotations?.[ANNOTATIONS.CHESS_WINNER] || null;
+            const moveHistory = chunk.annotations?.[ANNOTATIONS.CHESS_MOVE_HISTORY] || [];
+            const invalidMove = chunk.annotations?.[ANNOTATIONS.CHESS_INVALID] ?
+                chunk.annotations[ANNOTATIONS.CHESS_INVALID_MOVE] || 'Invalid move' : '';
+
+            const chessEl = document.createElement(ELEMENT_TAGS.RX_CHESS);
+            this._setCommonProperties(chessEl, chunk.id);
+            chessEl.fen = fen;
+            chessEl.currentPlayer = turn === CHESS_TURNS.WHITE ? 'white' : 'black';
+            chessEl.isCheck = isCheck;
+            chessEl.gameOver = gameOver;
+            chessEl.winner = winner;
+            chessEl.moveHistory = moveHistory;
+            chessEl.invalidMove = invalidMove;
+
+            return chessEl;
+        } catch (e) {
+            console.error('[RXCAFE] Failed to create chess element:', e);
+            return this._createErrorElement(chunk, chunk.annotations[ANNOTATIONS.ERROR_MESSAGE] || 'Failed to render chess board', chunk.annotations[ANNOTATIONS.LLM_BACKEND] || '');
+        }
+    }
+
+    _createWebElement(chunk) {
+        const isTrusted = chunk.annotations?.[ANNOTATIONS.TRUST_LEVEL]?.trusted === true;
+        const sourceUrl = chunk.annotations?.[ANNOTATIONS.WEB_SOURCE_URL] || 'Unknown source';
+
+        const webEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_WEB);
+        webEl.content = chunk.content;
+        webEl.sourceUrl = sourceUrl;
+        webEl.trusted = isTrusted;
+        webEl.chunkId = chunk.id;
+
+        webEl.addEventListener('trust-toggle', (e) => {
+            this.chat.toggleTrustFromButton(e.detail.chunkId, e.detail.trusted);
+        });
+
+        return webEl;
+    }
+
+    _createErrorElement(chunk, message, backend) {
+        const errorEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_ERROR);
+        this.chat._elCounter++;
+        errorEl.dataset.elId = this.chat._elCounter;
+        errorEl.message = message;
+        errorEl.backend = backend;
+        errorEl.chunkId = chunk.id;
+        return errorEl;
+    }
+
+    _createToolElement(chunk) {
+        const toolName = chunk.annotations?.[ANNOTATIONS.TOOL_NAME];
+        const toolResult = chunk.annotations?.[ANNOTATIONS.TOOL_RESULTS];
+        const toolDetection = chunk.annotations?.[ANNOTATIONS.TOOL_DETECTION];
+
+        const toolEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TOOL);
+        this._setCommonProperties(toolEl, chunk.id);
+        toolEl.toolName = toolName || 'Unknown Tool';
+        toolEl.toolResult = toolResult;
+        toolEl.toolCalls = toolDetection?.toolCalls || [];
+        toolEl.content = chunk.content || '';
+
+        return toolEl;
+    }
+
+    _createTextElement(chunk) {
+        const textEl = document.createElement(ELEMENT_TAGS.RX_MESSAGE_TEXT);
+        this._setCommonProperties(textEl, chunk.id, chunk.annotations?.[ANNOTATIONS.CHAT_ROLE] || ROLES.ASSISTANT);
+        textEl.content = chunk.content || '';
+        textEl.annotations = chunk.annotations || {};
+        return textEl;
     }
 }

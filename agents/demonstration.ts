@@ -338,7 +338,7 @@ console.log(greet("World"));`,
   {
     delay: 15500,
     generate: () => createTextChunk(
-      '📈 **Vega Graphs**\n\n usingInteractive charts Vega-Lite:',
+      '📈 **Vega Graphs**\n\n using Interactive charts Vega-Lite:',
       'demonstration',
       { 'chat.role': 'assistant', 'parsers.markdown.enabled': true }
     )
